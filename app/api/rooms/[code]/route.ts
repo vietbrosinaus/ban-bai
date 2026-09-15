@@ -13,8 +13,13 @@ function failure(error: unknown) {
 export async function GET(request: Request, context: RouteContext<"/api/rooms/[code]">) {
   try {
     const { code } = await context.params;
-    const playerId = new URL(request.url).searchParams.get("playerId") ?? "";
-    return Response.json(await getRoom(roomCode(code), playerId));
+    const searchParams = new URL(request.url).searchParams;
+    const playerId = searchParams.get("playerId") ?? "";
+    const sinceValue = searchParams.get("since");
+    const sinceRevision = sinceValue === null ? undefined : Number(sinceValue);
+    const room = await getRoom(roomCode(code), playerId, Number.isFinite(sinceRevision) ? sinceRevision : undefined);
+    if (!room) return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+    return Response.json(room, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     return failure(error);
   }

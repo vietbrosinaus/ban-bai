@@ -36,10 +36,12 @@ function decodeState(value: RoomRow["state"]): RoomState {
   return typeof value === "string" ? JSON.parse(value) as RoomState : value;
 }
 
-export async function getRoom(code: string, viewerId: string) {
+export async function getRoom(code: string, viewerId: string, sinceRevision?: number) {
   const row = await readRow(code);
   if (!row) throw new RoomError("That room does not exist.", 404);
-  return publicRoom(decodeState(row.state), viewerId);
+  const state = decodeState(row.state);
+  if (typeof sinceRevision === "number" && state.revision <= sinceRevision) return null;
+  return publicRoom(state, viewerId);
 }
 
 export async function createRoom(nameValue: unknown) {

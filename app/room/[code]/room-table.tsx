@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowLeft, Check, Copy, Crown, Hand, Layers3, LogOut, Redo2, RefreshCw, Shuffle, Users } from "lucide-react";
+import { ArrowLeft, Check, Copy, Crown, Hand, Layers3, LoaderCircle, LogOut, Redo2, RefreshCw, Shuffle, Users, Wifi, WifiOff } from "lucide-react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -21,10 +22,12 @@ declare global {
 
 const suitSymbol: Record<Suit, string> = { spades: "♠", hearts: "♥", diamonds: "♦", clubs: "♣" };
 
-function CardFace({ card, className = "", onClick, draggable, onDragStart }: { card: PlayingCard; className?: string; onClick?: () => void; draggable?: boolean; onDragStart?: React.DragEventHandler<HTMLButtonElement> }) {
+type SyncStatus = "connecting" | "live" | "reconnecting" | "offline";
+
+function CardFace({ card, className = "", onClick, draggable, disabled, onDragStart, style }: { card: PlayingCard; className?: string; onClick?: () => void; draggable?: boolean; disabled?: boolean; onDragStart?: React.DragEventHandler<HTMLButtonElement>; style?: React.CSSProperties }) {
   const red = card.suit === "hearts" || card.suit === "diamonds";
   return (
-    <button type="button" className={`playing-card ${red ? "card-red" : ""} ${className}`} onClick={onClick} draggable={draggable} onDragStart={onDragStart} aria-label={`${card.rank} of ${card.suit}`}>
+    <button type="button" className={`playing-card ${red ? "card-red" : ""} ${className}`} onClick={onClick} draggable={draggable && !disabled} disabled={disabled} onDragStart={onDragStart} style={style} aria-label={`${card.rank} of ${card.suit}`}>
       <span className="card-corner"><b>{card.rank}</b><i>{suitSymbol[card.suit]}</i></span>
       <span className="card-suit">{suitSymbol[card.suit]}</span>
       <span className="card-corner card-corner-bottom"><b>{card.rank}</b><i>{suitSymbol[card.suit]}</i></span>
@@ -41,36 +44,93 @@ export default function RoomTable() {
   const [name, setName] = useState("");
   const [joinOpen, setJoinOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [dealCount, setDealCount] = useState("5");
   const [fatalError, setFatalError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [storageReady, setStorageReady] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
+  const [dragOver, setDragOver] = useState(false);
+  const revisionRef = useRef(0);
+  const actionLockRef = useRef(false);
 
-  const refresh = useCallback(async (id: string, quiet = false) => {
+  const applyRoom = useCallback((next: PublicRoom) => {
+    revisionRef.current = Math.max(revisionRef.current, next.revision);
+    setRoom((current) => current && current.revision > next.revision ? current : next);
+    setFatalError("");
+    setSyncStatus("live");
+  }, []);
+
+  const refresh = useCallback(async (id: string, quiet = false, sinceRevision?: number, signal?: AbortSignal) => {
     try {
-      const response = await fetch(`/api/rooms/${encodeURIComponent(code)}?playerId=${encodeURIComponent(id)}`, { cache: "no-store" });
+      const query = new URLSearchParams({ playerId: id });
+      if (typeof sinceRevision === "number") query.set("since", String(sinceRevision));
+      const response = await fetch(`/api/rooms/${encodeURIComponent(code)}?${query}`, { cache: "no-store", signal });
+      if (response.status === 204) {
+        setSyncStatus("live");
+        return null;
+      }
       const result = await response.json() as PublicRoom & { error?: string };
       if (!response.ok) throw new Error(result.error ?? "Could not load the table.");
-      setRoom(result);
-      setFatalError("");
+      applyRoom(result);
       setJoinOpen(!result.players.some((player) => player.id === id));
       return result;
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return null;
+      setSyncStatus(navigator.onLine ? "reconnecting" : "offline");
       if (!quiet) setFatalError(error instanceof Error ? error.message : "Could not load the table.");
       return null;
     }
+  }, [applyRoom, code]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPlayerId(localStorage.getItem(`ban-bai:${code}:player`) ?? "");
+      setName(localStorage.getItem("ban-bai:name") ?? "");
+      setStorageReady(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [code]);
 
   useEffect(() => {
-    const stored = localStorage.getItem(`ban-bai:${code}:player`) ?? "";
-    setPlayerId(stored);
-    setName(localStorage.getItem("ban-bai:name") ?? "");
-  }, [code]);
+    if (!storageReady) return;
+    let stopped = false;
+    let timer: number | undefined;
+    let controller: AbortController | null = null;
 
-  useEffect(() => {
-    void refresh(playerId);
-    const timer = window.setInterval(() => void refresh(playerId, true), 1200);
-    return () => window.clearInterval(timer);
-  }, [playerId, refresh]);
+    const schedule = (delay: number) => {
+      if (!stopped) timer = window.setTimeout(poll, delay);
+    };
+    const poll = async () => {
+      if (stopped) return;
+      if (!navigator.onLine) {
+        setSyncStatus("offline");
+        schedule(1800);
+        return;
+      }
+      controller = new AbortController();
+      await refresh(playerId, revisionRef.current > 0, revisionRef.current || undefined, controller.signal);
+      schedule(document.hidden ? 2400 : 650);
+    };
+    const wake = () => {
+      if (timer) window.clearTimeout(timer);
+      setSyncStatus(navigator.onLine ? "connecting" : "offline");
+      void poll();
+    };
+
+    void poll();
+    window.addEventListener("online", wake);
+    window.addEventListener("offline", wake);
+    document.addEventListener("visibilitychange", wake);
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+      controller?.abort();
+      window.removeEventListener("online", wake);
+      window.removeEventListener("offline", wake);
+      document.removeEventListener("visibilitychange", wake);
+    };
+  }, [playerId, refresh, storageReady]);
 
   async function join(event: FormEvent) {
     event.preventDefault();
@@ -83,7 +143,7 @@ export default function RoomTable() {
       localStorage.setItem(`ban-bai:${code}:player`, result.playerId);
       localStorage.setItem("ban-bai:name", name.trim());
       setPlayerId(result.playerId);
-      setRoom(result.room);
+      applyRoom(result.room);
       setJoinOpen(false);
       toast.success("You’re at the table.");
     } catch (error) {
@@ -94,21 +154,26 @@ export default function RoomTable() {
   }
 
   const sendAction = useCallback(async (action: string, data: Record<string, unknown> = {}) => {
-    if (!playerId) return null;
-    setBusy(true);
+    if (!playerId || actionLockRef.current) return null;
+    actionLockRef.current = true;
+    setPendingAction(action);
     try {
       const response = await fetch(`/api/rooms/${encodeURIComponent(code)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, playerId, data }) });
       const result = await response.json() as PublicRoom & { error?: string };
       if (!response.ok) throw new Error(result.error ?? "The move did not go through.");
-      setRoom(result);
+      applyRoom(result);
+      if (navigator.vibrate) navigator.vibrate(18);
       return result;
     } catch (error) {
+      setSyncStatus(navigator.onLine ? "reconnecting" : "offline");
+      void refresh(playerId, true);
       toast.error(error instanceof Error ? error.message : "The move did not go through.");
       return null;
     } finally {
-      setBusy(false);
+      actionLockRef.current = false;
+      setPendingAction(null);
     }
-  }, [code, playerId]);
+  }, [applyRoom, code, playerId, refresh]);
 
   useEffect(() => {
     if (!playerId || !document.modelContext?.registerTool) return;
@@ -131,6 +196,8 @@ export default function RoomTable() {
 
   const currentPlayer = room?.players.find((player) => player.id === playerId);
   const opponents = useMemo(() => room?.players.filter((player) => player.id !== playerId) ?? [], [room, playerId]);
+  const isActing = pendingAction !== null;
+  const syncLabel = syncStatus === "live" ? "Live" : syncStatus === "offline" ? "Offline" : syncStatus === "reconnecting" ? "Reconnecting" : "Connecting";
 
   if (fatalError && !room) {
     return <main className="room-shell room-error"><div><Layers3 /><h1>Table unavailable</h1><p>{fatalError}</p><Button onClick={() => router.push("/")}><ArrowLeft /> Back home</Button></div></main>;
@@ -139,15 +206,19 @@ export default function RoomTable() {
   return (
     <main className="room-shell">
       <header className="room-header">
-        <a className="brand room-brand" href="/" aria-label="Bàn Bài home"><span className="brand-mark"><span>♠</span><span>♥</span></span><span>Bàn Bài</span></a>
+        <Link className="brand room-brand" href="/" aria-label="Bàn Bài home"><span className="brand-mark"><span>♠</span><span>♥</span></span><span>Bàn Bài</span></Link>
         <div className="room-identity">
           <span className="room-mode">52-card sandbox</span>
           <button className="room-code" type="button" onClick={copyInvite} aria-label="Copy invite link"><span>Room</span><b>{code}</b>{copied ? <Check /> : <Copy />}</button>
+          <div className={`sync-pill sync-${syncStatus}`} role="status" aria-live="polite">
+            {syncStatus === "live" ? <Wifi /> : syncStatus === "offline" ? <WifiOff /> : <LoaderCircle className="sync-spinner" />}
+            <span>{syncLabel}</span>
+          </div>
         </div>
         <Button className="invite-button" onClick={copyInvite}><Users /> Invite friends</Button>
       </header>
 
-      <section className="felt-table" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { const cardId = event.dataTransfer.getData("text/card-id"); if (cardId) void sendAction("play", { cardId }); }}>
+      <section className={`felt-table ${dragOver ? "is-drop-target" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { const nextTarget = event.relatedTarget; if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) setDragOver(false); }} onDrop={(event) => { event.preventDefault(); setDragOver(false); const cardId = event.dataTransfer.getData("text/card-id"); if (cardId) void sendAction("play", { cardId }); }}>
         <div className="opponent-rail">
           {opponents.map((player) => (
             <div className="opponent" key={player.id}>
@@ -161,11 +232,11 @@ export default function RoomTable() {
 
         <div className="table-center">
           <div className="deck-area">
-            <button type="button" className="card-deck" onClick={() => void sendAction("draw")} disabled={busy || !room?.deckCount} aria-label={`Draw from deck, ${room?.deckCount ?? 0} cards remaining`}><span>BB</span><b>{room?.deckCount ?? 0}</b></button>
+            <button type="button" className={`card-deck ${pendingAction === "draw" ? "is-pending" : ""}`} onClick={() => void sendAction("draw")} disabled={isActing || !room?.deckCount} aria-label={`Draw from deck, ${room?.deckCount ?? 0} cards remaining`}><span>BB</span><b>{pendingAction === "draw" ? <LoaderCircle className="sync-spinner" /> : room?.deckCount ?? 0}</b></button>
             <span>Tap deck to draw</span>
           </div>
           <div className={`play-pile ${room?.table.length ? "has-cards" : ""}`}>
-            {room?.table.length ? room.table.slice(-7).map((card, index) => <CardFace key={`${card.id}-${card.playedAt}`} card={card} className="table-card" onClick={index === room.table.slice(-7).length - 1 && card.playedBy === playerId ? () => void sendAction("take-back") : undefined} />) : <div className="drop-hint"><Hand /><b>Play a card</b><span>Drag it here or tap from your hand</span></div>}
+            {room?.table.length ? room.table.slice(-7).map((card, index) => <CardFace key={`${card.id}-${card.playedAt}`} card={card} className="table-card" disabled={isActing} onClick={index === room.table.slice(-7).length - 1 && card.playedBy === playerId ? () => void sendAction("take-back") : undefined} />) : <div className="drop-hint"><Hand /><b>{dragOver ? "Drop to play" : "Play a card"}</b><span>Drag it here or tap from your hand</span></div>}
           </div>
         </div>
 
@@ -176,13 +247,14 @@ export default function RoomTable() {
               <SelectTrigger aria-label="Cards per player"><SelectValue /></SelectTrigger>
               <SelectContent>{[3, 5, 7, 9, 10, 13].map((count) => <SelectItem key={count} value={String(count)}>{count} cards each</SelectItem>)}</SelectContent>
             </Select>
-            <Button disabled={!room?.isHost || busy} onClick={() => void sendAction("deal", { count: Number(dealCount) })}>Deal</Button>
+            <Button disabled={!room?.isHost || isActing} onClick={() => void sendAction("deal", { count: Number(dealCount) })}>{pendingAction === "deal" ? <LoaderCircle className="sync-spinner" /> : "Deal"}</Button>
           </div>
-          <Button variant="outline" disabled={!room?.isHost || busy} onClick={() => void sendAction("shuffle")}><Shuffle /> Shuffle deck</Button>
-          <Button variant="ghost" disabled={!room?.isHost || busy} onClick={() => void sendAction("reset")}><RefreshCw /> Reset table</Button>
+          <Button variant="outline" disabled={!room?.isHost || isActing} onClick={() => void sendAction("shuffle")}><Shuffle className={pendingAction === "shuffle" ? "sync-spinner" : ""} /> Shuffle deck</Button>
+          <Button variant="ghost" disabled={!room?.isHost || isActing} onClick={() => void sendAction("reset")}><RefreshCw className={pendingAction === "reset" ? "sync-spinner" : ""} /> Reset table</Button>
         </aside>
 
-        <div className="activity-line" aria-live="polite"><span className="status-pulse" /> {room?.lastAction ?? "Loading the table…"}</div>
+        <div className="activity-line" aria-live="polite"><span className={`status-pulse ${syncStatus !== "live" ? "status-muted" : ""}`} /> {pendingAction ? "Updating the table…" : room?.lastAction ?? "Loading the table…"}</div>
+        {!room && !fatalError && <div className="table-loading" role="status"><LoaderCircle className="sync-spinner" /><span>Setting the table…</span></div>}
       </section>
 
       <section className="hand-dock">
@@ -192,8 +264,8 @@ export default function RoomTable() {
           <Button variant="ghost" size="sm" onClick={() => router.push("/")}><LogOut /> Leave</Button>
         </div>
         <div className="hand-cards">
-          {room?.hand.map((card, index) => <CardFace key={card.id} card={card} className="hand-card" draggable onDragStart={(event) => event.dataTransfer.setData("text/card-id", card.id)} onClick={() => void sendAction("play", { cardId: card.id })} />)}
-          {room && room.hand.length === 0 && <button type="button" className="empty-hand" onClick={() => void sendAction("draw")} disabled={!room.deckCount}><Redo2 /><span>Your hand is empty</span><b>Draw a card</b></button>}
+          {room?.hand.map((card, index) => <CardFace key={card.id} card={card} className="hand-card" draggable disabled={isActing} style={{ "--hand-index": index } as React.CSSProperties} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/card-id", card.id); }} onClick={() => void sendAction("play", { cardId: card.id })} />)}
+          {room && room.hand.length === 0 && <button type="button" className="empty-hand" onClick={() => void sendAction("draw")} disabled={!room.deckCount || isActing}><Redo2 /><span>Your hand is empty</span><b>{pendingAction === "draw" ? "Drawing…" : "Draw a card"}</b></button>}
         </div>
       </section>
 
