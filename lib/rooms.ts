@@ -1,8 +1,8 @@
-import { env } from "cloudflare:workers";
+import { neon } from "@neondatabase/serverless";
 
 import { cleanName, createDeck, playerColors, publicRoom, RoomState, shuffle } from "@/lib/game";
 
-type RoomRow = { state: string; version: number };
+type RoomRow = { state: RoomState | string; version: number };
 
 export class RoomError extends Error {
   constructor(message: string, public status = 400) {
@@ -11,8 +11,9 @@ export class RoomError extends Error {
 }
 
 function database() {
-  if (!env.DB) throw new RoomError("The shared table is temporarily unavailable.", 503);
-  return env.DB;
+  const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+  if (!connectionString) throw new RoomError("The shared table is temporarily unavailable.", 503);
+  return neon(connectionString);
 }
 
 function roomCode() {
@@ -27,13 +28,18 @@ function newPlayer(id: string, name: string, index: number) {
 }
 
 async function readRow(code: string): Promise<RoomRow | null> {
-  return database().prepare("SELECT state, version FROM rooms WHERE code = ? LIMIT 1").bind(code).first<RoomRow>();
+  const rows = await database().query("SELECT state, version FROM rooms WHERE code = $1 LIMIT 1", [code]);
+  return (rows[0] as RoomRow | undefined) ?? null;
+}
+
+function decodeState(value: RoomRow["state"]): RoomState {
+  return typeof value === "string" ? JSON.parse(value) as RoomState : value;
 }
 
 export async function getRoom(code: string, viewerId: string) {
   const row = await readRow(code);
   if (!row) throw new RoomError("That room does not exist.", 404);
-  return publicRoom(JSON.parse(row.state) as RoomState, viewerId);
+  return publicRoom(decodeState(row.state), viewerId);
 }
 
 export async function createRoom(nameValue: unknown) {
@@ -57,8 +63,7 @@ export async function createRoom(nameValue: unknown) {
       lastAction: `${name} opened the table`,
     };
     try {
-      await database().prepare("INSERT INTO rooms (code, state, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-        .bind(code, JSON.stringify(state), 1, now, now).run();
+      await database().query("INSERT INTO rooms (code, state, version, created_at, updated_at) VALUES ($1, $2::jsonb, $3, $4, $5)", [code, JSON.stringify(state), 1, now, now]);
       return { code, playerId, room: publicRoom(state, playerId) };
     } catch (error) {
       if (attempt === 4) throw error;
@@ -71,13 +76,12 @@ async function mutateRoom(code: string, update: (state: RoomState) => RoomState)
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const row = await readRow(code);
     if (!row) throw new RoomError("That room does not exist.", 404);
-    const current = JSON.parse(row.state) as RoomState;
+    const current = decodeState(row.state);
     const next = update(structuredClone(current));
     next.revision = current.revision + 1;
     next.updatedAt = Date.now();
-    const result = await database().prepare("UPDATE rooms SET state = ?, version = ?, updated_at = ? WHERE code = ? AND version = ?")
-      .bind(JSON.stringify(next), row.version + 1, next.updatedAt, code, row.version).run();
-    if ((result.meta.changes ?? 0) === 1) return next;
+    const changed = await database().query("UPDATE rooms SET state = $1::jsonb, version = $2, updated_at = $3 WHERE code = $4 AND version = $5 RETURNING code", [JSON.stringify(next), row.version + 1, next.updatedAt, code, row.version]);
+    if (changed.length === 1) return next;
   }
   throw new RoomError("The table changed at the same time. Please try again.", 409);
 }
