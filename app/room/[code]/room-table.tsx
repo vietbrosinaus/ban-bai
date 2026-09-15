@@ -272,30 +272,28 @@ export default function RoomTable() {
       </header>
 
       <section className={`felt-table ${dragOver ? "is-drop-target" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { const nextTarget = event.relatedTarget; if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) setDragOver(false); }} onDrop={(event) => { event.preventDefault(); setDragOver(false); const cardId = event.dataTransfer.getData("text/card-id"); if (cardId) void sendAction("play", { cardId }); }}>
-        <div className={`opponent-rail ${isTamQuocSat ? "tam-opponent-rail" : ""}`}>
-          {opponents.map((player) => {
+        <div className="player-ring" aria-label="Fixed table seating">
+          {room?.players.map((player) => {
             const board = room?.boards[player.id];
             const targeted = myTargets.includes(player.id);
-            return isTamQuocSat && board ? (
-              <div className={`opponent tam-opponent ${targeted ? "is-targeted" : ""} ${room?.activePlayerId === player.id ? "is-active" : ""}`} key={player.id}>
-                <button type="button" className="opponent-target" onClick={() => void sendAction("toggle-target", { targetPlayerId: player.id })} disabled={isActing} aria-label={`${targeted ? "Remove" : "Add"} ${player.name} as target`}>
+            const isSelf = player.id === playerId;
+            return (
+              <div className={`table-seat seat-${player.seat} ${isTamQuocSat ? "tam-table-seat" : ""} ${targeted ? "is-targeted" : ""} ${room?.activePlayerId === player.id ? "is-active" : ""} ${isSelf ? "is-self" : ""}`} key={player.id}>
+                <button type="button" className="seat-main" onClick={() => !isSelf && isTamQuocSat && void sendAction("toggle-target", { targetPlayerId: player.id })} disabled={isActing || isSelf || !isTamQuocSat} aria-label={isSelf ? `${player.name}, your seat` : isTamQuocSat ? `${targeted ? "Remove" : "Add"} ${player.name} as target` : `${player.name}, seat ${player.seat + 1}`}>
                   <span className="player-avatar" style={{ background: player.color }}>{player.name.slice(0, 2).toUpperCase()}</span>
-                  <span className="opponent-name"><b>{player.name}</b><small><Heart /> {board.hp}/{board.maxHp} · {room?.handCounts[player.id] ?? 0} cards</small></span>
+                  <span className="seat-name"><b>{player.name}{isSelf && <i> You</i>}</b><small>{isTamQuocSat && board && <><Heart /> {board.hp}/{board.maxHp} · </>}{room?.handCounts[player.id] ?? 0} cards</small></span>
                   {targeted && <Crosshair className="target-mark" />}
                 </button>
-                <div className="opponent-generals">{board.generals.map((general, index) => <GeneralPortrait key={index} general={general} />)}</div>
-                <div className="opponent-flags">{board.chained && <span><Link2 /> Chained</span>}{board.faceDown && <span><RotateCcw /> Face down</span>}{room?.activePlayerId === player.id && <span className="turn-flag">Turn</span>}</div>
-                <BoardZones board={board} />
-              </div>
-            ) : (
-              <div className="opponent" key={player.id}>
-                <span className="player-avatar" style={{ background: player.color }}>{player.name.slice(0, 2).toUpperCase()}</span>
-                <div><b>{player.name}</b><span>{room?.handCounts[player.id] ?? 0} cards</span></div>
-                <div className="mini-hand" aria-hidden="true">{Array.from({ length: Math.min(room?.handCounts[player.id] ?? 0, 5) }).map((_, index) => <i key={index} />)}</div>
+                {isTamQuocSat && board && <div className="seat-details">
+                  <div className="seat-generals">{board.generals.map((general, index) => isVisibleGeneral(general) ? <span key={index} className={`faction-${general.faction}`} style={{ backgroundImage: `url("${general.asset}")` }} title={general.name} /> : <span key={index} className="seat-general-hidden" title={general ? "Hidden general" : "No general selected"}>將</span>)}</div>
+                  <div className="seat-flags">{board.chained && <span title="Chained"><Link2 /></span>}{board.faceDown && <span title="Face down"><RotateCcw /></span>}{board.equipment.length > 0 && <span title={`${board.equipment.length} equipment`}><Shield />{board.equipment.length}</span>}{board.judging.length > 0 && <span title={`${board.judging.length} delayed tricks`}><Sparkles />{board.judging.length}</span>}</div>
+                </div>}
+                {room?.activePlayerId === player.id && <span className="seat-turn"><Crown /> Turn</span>}
+                <span className="seat-number">{player.seat + 1}</span>
               </div>
             );
           })}
-          {room && room.players.length === 1 && <div className="empty-seat"><Users /><span>Share the room link to fill a seat</span></div>}
+          {room && room.players.length === 1 && <div className="invite-seat-hint"><Users /><span>Share the link to fill the circle</span></div>}
         </div>
 
         <div className="table-center">

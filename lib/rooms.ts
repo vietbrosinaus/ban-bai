@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 
-import { cleanName, createDeck, createPlayerBoard, GameMode, normalizeRoomState, playerColors, PlayingCard, publicRoom, RoomState, shuffle, TableCard } from "@/lib/game";
+import { cleanName, createDeck, createPlayerBoard, GameMode, normalizeRoomState, playerColors, PlayingCard, publicRoom, RoomState, seatJoinOrder, shuffle, TableCard } from "@/lib/game";
 import { tamQuocSatGeneralById } from "@/lib/tam-quoc-sat-generals";
 
 type RoomRow = { state: RoomState | string; version: number };
@@ -24,8 +24,9 @@ function roomCode() {
   return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
-function newPlayer(id: string, name: string, index: number) {
-  return { id, name, color: playerColors[index % playerColors.length], joinedAt: Date.now() };
+function newPlayer(id: string, name: string, index: number, occupiedSeats: number[] = []) {
+  const seat = seatJoinOrder.find((candidate) => !occupiedSeats.includes(candidate)) ?? index;
+  return { id, name, color: playerColors[index % playerColors.length], seat, joinedAt: Date.now() };
 }
 
 function toPlayingCard(card: TableCard): PlayingCard {
@@ -122,7 +123,7 @@ export async function joinRoom(code: string, nameValue: unknown, suppliedId?: un
       return room;
     }
     if (room.players.length >= 10) throw new RoomError("This room is full.", 409);
-    room.players.push(newPlayer(playerId, name, room.players.length));
+    room.players.push(newPlayer(playerId, name, room.players.length, room.players.map((player) => player.seat)));
     room.hands[playerId] = [];
     room.boards[playerId] = createPlayerBoard();
     room.targets[playerId] = [];

@@ -22,6 +22,7 @@ export type Player = {
   id: string;
   name: string;
   color: string;
+  seat: number;
   joinedAt: number;
 };
 
@@ -84,6 +85,8 @@ export const playerColors = [
   "#ffad5a", "#8fd06f", "#ef7da7", "#8fc9ef", "#c7a776",
 ];
 
+export const seatJoinOrder = [0, 5, 3, 7, 2, 8, 1, 9, 4, 6] as const;
+
 export function createPlayerBoard(): PlayerBoard {
   return { hp: 4, maxHp: 4, generals: [null, null], equipment: [], judging: [], chained: false, faceDown: false };
 }
@@ -93,7 +96,12 @@ export function normalizeRoomState(state: RoomState): RoomState {
   state.boards ??= {};
   state.targets ??= {};
   if (state.activePlayerId === undefined) state.activePlayerId = null;
-  for (const player of state.players) {
+  const occupiedSeats = new Set<number>();
+  for (const [index, player] of state.players.entries()) {
+    if (!Number.isInteger(player.seat) || player.seat < 0 || player.seat > 9 || occupiedSeats.has(player.seat)) {
+      player.seat = seatJoinOrder.find((seat) => !occupiedSeats.has(seat)) ?? index;
+    }
+    occupiedSeats.add(player.seat);
     state.hands[player.id] ??= [];
     state.boards[player.id] ??= createPlayerBoard();
     state.targets[player.id] ??= [];
