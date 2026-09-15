@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { GameMode } from "@/lib/game";
 
 const previewCards = [
   { rank: "A", suit: "♠", color: "ink" },
@@ -20,13 +21,14 @@ export default function Lobby() {
   const [name, setName] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [game, setGame] = useState<GameMode>("sandbox-52");
 
   async function previewCreate(event: FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
     setBusy(true);
     try {
-      const response = await fetch("/api/rooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+      const response = await fetch("/api/rooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, game }) });
       const result = await response.json() as { code?: string; playerId?: string; error?: string };
       if (!response.ok || !result.code || !result.playerId) throw new Error(result.error ?? "Could not create the table.");
       localStorage.setItem(`ban-bai:${result.code}:player`, result.playerId);
@@ -89,8 +91,8 @@ export default function Lobby() {
           <p className="eyebrow">A table for your crew</p>
           <h1>Cards on the table.<br />Friends in the room.</h1>
           <p className="lobby-intro">Open a private room, share one link, and start playing. Built for the card games we grew up with.</p>
-          <div className="game-chips" aria-label="Planned games">
-            <span>Tiến Lên</span><span>Tá Lả</span><span>Tam Quốc Sát</span><span>+ custom games</span>
+          <div className="game-chips" aria-label="Available and planned games">
+            <span>Tiến Lên</span><span>Tá Lả</span><span>Tam Quốc Sát · live</span><span>+ custom games</span>
           </div>
         </div>
 
@@ -106,6 +108,15 @@ export default function Lobby() {
           <form onSubmit={previewCreate} className="entry-form">
             <label htmlFor="create-name">Your name</label>
             <Input id="create-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Minh" autoComplete="nickname" maxLength={24} />
+            <fieldset className="game-picker">
+              <legend>Choose a deck</legend>
+              <button type="button" className={game === "sandbox-52" ? "is-selected" : ""} onClick={() => setGame("sandbox-52")} aria-pressed={game === "sandbox-52"}>
+                <span className="picker-icon">♠</span><span><b>Classic cards</b><small>52-card sandbox</small></span>
+              </button>
+              <button type="button" className={game === "tam-quoc-sat" ? "is-selected" : ""} onClick={() => setGame("tam-quoc-sat")} aria-pressed={game === "tam-quoc-sat"}>
+                <span className="picker-icon picker-tqs">殺</span><span><b>Tam Quốc Sát</b><small>108-card standard deck</small></span>
+              </button>
+            </fieldset>
             <Button className="primary-action" type="submit" disabled={!name.trim() || busy}>
               {busy ? "Setting the table…" : "Create a table"} {!busy && <ArrowRight />}
             </Button>

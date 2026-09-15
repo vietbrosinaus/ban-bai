@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 
-import { cleanName, createDeck, playerColors, publicRoom, RoomState, shuffle } from "@/lib/game";
+import { cleanName, createDeck, GameMode, playerColors, publicRoom, RoomState, shuffle } from "@/lib/game";
 
 type RoomRow = { state: RoomState | string; version: number };
 
@@ -44,9 +44,10 @@ export async function getRoom(code: string, viewerId: string, sinceRevision?: nu
   return publicRoom(state, viewerId);
 }
 
-export async function createRoom(nameValue: unknown) {
+export async function createRoom(nameValue: unknown, gameValue?: unknown) {
   const name = cleanName(nameValue);
   if (!name) throw new RoomError("Please enter your name.");
+  const game: GameMode = gameValue === "tam-quoc-sat" ? "tam-quoc-sat" : "sandbox-52";
   const playerId = crypto.randomUUID();
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -55,10 +56,10 @@ export async function createRoom(nameValue: unknown) {
     const state: RoomState = {
       code,
       hostId: playerId,
-      game: "sandbox-52",
+      game,
       players: [newPlayer(playerId, name, 0)],
       hands: { [playerId]: [] },
-      deck: shuffle(createDeck()),
+      deck: shuffle(createDeck(game)),
       table: [],
       revision: 1,
       updatedAt: now,
@@ -137,7 +138,7 @@ export async function performAction(code: string, playerId: string, action: stri
       if (index < 0) throw new RoomError("That card is not in your hand.", 409);
       const [card] = hand.splice(index, 1);
       room.table.push({ ...card, playedBy: playerId, playedAt: Date.now() });
-      room.lastAction = `${player.name} played ${card.rank}`;
+      room.lastAction = `${player.name} played ${card.name ?? card.rank}`;
       return room;
     }
     if (action === "take-back") {
@@ -157,7 +158,7 @@ export async function performAction(code: string, playerId: string, action: stri
     if (action === "deal") {
       requireHost(room, playerId);
       const count = Math.max(1, Math.min(13, Number(data.count) || 5));
-      room.deck = shuffle(createDeck());
+      room.deck = shuffle(createDeck(room.game));
       room.table = [];
       for (const seated of room.players) room.hands[seated.id] = [];
       for (let round = 0; round < count; round += 1) {
@@ -171,7 +172,7 @@ export async function performAction(code: string, playerId: string, action: stri
     }
     if (action === "reset") {
       requireHost(room, playerId);
-      room.deck = shuffle(createDeck());
+      room.deck = shuffle(createDeck(room.game));
       room.table = [];
       for (const seated of room.players) room.hands[seated.id] = [];
       room.lastAction = `${player.name} reset the table`;

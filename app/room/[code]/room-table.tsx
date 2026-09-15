@@ -26,8 +26,10 @@ type SyncStatus = "connecting" | "live" | "reconnecting" | "offline";
 
 function CardFace({ card, className = "", onClick, draggable, disabled, onDragStart, style }: { card: PlayingCard; className?: string; onClick?: () => void; draggable?: boolean; disabled?: boolean; onDragStart?: React.DragEventHandler<HTMLButtonElement>; style?: React.CSSProperties }) {
   const red = card.suit === "hearts" || card.suit === "diamonds";
+  const cardStyle = card.asset ? { ...style, backgroundImage: `url("${card.asset}")` } : style;
+  const label = card.name ? `${card.name}, ${card.rank} of ${card.suit}` : `${card.rank} of ${card.suit}`;
   return (
-    <button type="button" className={`playing-card ${red ? "card-red" : ""} ${className}`} onClick={onClick} draggable={draggable && !disabled} disabled={disabled} onDragStart={onDragStart} style={style} aria-label={`${card.rank} of ${card.suit}`}>
+    <button type="button" className={`playing-card ${red ? "card-red" : ""} ${card.asset ? "art-card" : ""} ${className}`} onClick={onClick} draggable={draggable && !disabled} disabled={disabled} onDragStart={onDragStart} style={cardStyle} aria-label={label} title={card.name}>
       <span className="card-corner"><b>{card.rank}</b><i>{suitSymbol[card.suit]}</i></span>
       <span className="card-suit">{suitSymbol[card.suit]}</span>
       <span className="card-corner card-corner-bottom"><b>{card.rank}</b><i>{suitSymbol[card.suit]}</i></span>
@@ -45,7 +47,7 @@ export default function RoomTable() {
   const [joinOpen, setJoinOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [dealCount, setDealCount] = useState("5");
+  const [dealCount, setDealCount] = useState("4");
   const [fatalError, setFatalError] = useState("");
   const [copied, setCopied] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
@@ -208,7 +210,7 @@ export default function RoomTable() {
       <header className="room-header">
         <Link className="brand room-brand" href="/" aria-label="Bàn Bài home"><span className="brand-mark"><span>♠</span><span>♥</span></span><span>Bàn Bài</span></Link>
         <div className="room-identity">
-          <span className="room-mode">52-card sandbox</span>
+          <span className="room-mode">{room?.game === "tam-quoc-sat" ? "Tam Quốc Sát · 108 cards" : "52-card sandbox"}</span>
           <button className="room-code" type="button" onClick={copyInvite} aria-label="Copy invite link"><span>Room</span><b>{code}</b>{copied ? <Check /> : <Copy />}</button>
           <div className={`sync-pill sync-${syncStatus}`} role="status" aria-live="polite">
             {syncStatus === "live" ? <Wifi /> : syncStatus === "offline" ? <WifiOff /> : <LoaderCircle className="sync-spinner" />}
@@ -232,7 +234,7 @@ export default function RoomTable() {
 
         <div className="table-center">
           <div className="deck-area">
-            <button type="button" className={`card-deck ${pendingAction === "draw" ? "is-pending" : ""}`} onClick={() => void sendAction("draw")} disabled={isActing || !room?.deckCount} aria-label={`Draw from deck, ${room?.deckCount ?? 0} cards remaining`}><span>BB</span><b>{pendingAction === "draw" ? <LoaderCircle className="sync-spinner" /> : room?.deckCount ?? 0}</b></button>
+            <button type="button" className={`card-deck ${room?.game === "tam-quoc-sat" ? "tam-quoc-deck" : ""} ${pendingAction === "draw" ? "is-pending" : ""}`} onClick={() => void sendAction("draw")} disabled={isActing || !room?.deckCount} aria-label={`Draw from deck, ${room?.deckCount ?? 0} cards remaining`}><span>{room?.game === "tam-quoc-sat" ? "殺" : "BB"}</span><b>{pendingAction === "draw" ? <LoaderCircle className="sync-spinner" /> : room?.deckCount ?? 0}</b></button>
             <span>Tap deck to draw</span>
           </div>
           <div className={`play-pile ${room?.table.length ? "has-cards" : ""}`}>
@@ -245,7 +247,7 @@ export default function RoomTable() {
           <div className="deal-control">
             <Select value={dealCount} onValueChange={(value) => value && setDealCount(value)}>
               <SelectTrigger aria-label="Cards per player"><SelectValue /></SelectTrigger>
-              <SelectContent>{[3, 5, 7, 9, 10, 13].map((count) => <SelectItem key={count} value={String(count)}>{count} cards each</SelectItem>)}</SelectContent>
+              <SelectContent>{[3, 4, 5, 7, 9, 10, 13].map((count) => <SelectItem key={count} value={String(count)}>{count} cards each</SelectItem>)}</SelectContent>
             </Select>
             <Button disabled={!room?.isHost || isActing} onClick={() => void sendAction("deal", { count: Number(dealCount) })}>{pendingAction === "deal" ? <LoaderCircle className="sync-spinner" /> : "Deal"}</Button>
           </div>

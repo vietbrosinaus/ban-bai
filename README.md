@@ -4,7 +4,8 @@ A lightweight online card table for 1–10 friends. Players join with a room lin
 
 ## Features
 
-- Shared 52-card table with private player hands
+- Selectable Classic 52-card and Tam Quốc Sát 108-card decks
+- Shared table with private player hands
 - Create and join rooms by link or six-character code
 - Deal, shuffle, draw, play, take back, and reset actions
 - Persistent rooms backed by Neon Postgres
@@ -33,4 +34,7 @@ vercel --prod
 
 ## Game modes
 
-The current release is a general-purpose 52-card sandbox. Tiến Lên, Tá Lả, and Tam Quốc Sát can be added as separate rule modules on top of the room and card engine.
+- **Classic cards:** a general-purpose 52-card sandbox.
+- **Tam Quốc Sát:** the 108-card standard deck with Vietnamese card names, suits, ranks, and licensed LangKhach artwork. It currently uses the same free-table actions as Classic cards; rule enforcement can be added as a separate engine later.
+
+Artwork attribution and redistribution context are retained in `public/tam-quoc-sat/NOTICE.md`.

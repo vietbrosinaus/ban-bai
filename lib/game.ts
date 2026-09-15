@@ -1,9 +1,15 @@
+import { createTamQuocSatDeck } from "@/lib/tam-quoc-sat";
+
 export type Suit = "spades" | "hearts" | "diamonds" | "clubs";
+export type GameMode = "sandbox-52" | "tam-quoc-sat";
 
 export type PlayingCard = {
   id: string;
   rank: string;
   suit: Suit;
+  cardType?: string;
+  name?: string;
+  asset?: string;
 };
 
 export type TableCard = PlayingCard & {
@@ -21,7 +27,7 @@ export type Player = {
 export type RoomState = {
   code: string;
   hostId: string;
-  game: "sandbox-52";
+  game: GameMode;
   players: Player[];
   hands: Record<string, PlayingCard[]>;
   deck: PlayingCard[];
@@ -47,7 +53,8 @@ export const playerColors = [
   "#ffad5a", "#8fd06f", "#ef7da7", "#8fc9ef", "#c7a776",
 ];
 
-export function createDeck(): PlayingCard[] {
+export function createDeck(game: GameMode = "sandbox-52"): PlayingCard[] {
+  if (game === "tam-quoc-sat") return createTamQuocSatDeck();
   return suits.flatMap((suit) => ranks.map((rank) => ({ id: `${suit}-${rank}`, rank, suit })));
 }
 
