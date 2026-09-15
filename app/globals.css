@@ -133,7 +133,7 @@ button, input { font: inherit; }
 .room-shell { min-height: 100svh; display: grid; grid-template-rows: 68px minmax(420px, 1fr) minmax(210px, auto); overflow: hidden; background: #12251e; color: #fffaf0; }
 .room-header { z-index: 20; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-width: 0; padding: 0 clamp(15px, 2.5vw, 34px); background: #f4efe2; color: #17241f; border-bottom: 1px solid #d5ccbb; }
 .room-brand { font-size: 1rem; }.room-brand .brand-mark { width: 34px; height: 34px; border-radius: 9px; }
-.room-identity { display: flex; align-items: center; gap: 10px; }.room-mode { padding: 7px 10px; border-radius: 999px; background: #e8e0d1; color: #5e6963; font-size: .7rem; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; }
+.room-identity { display: flex; align-items: center; gap: 10px; }.room-mode { padding: 7px 11px; border-radius: 999px; background: #e8e0d1; color: #5e6963; font-size: .74rem; font-weight: 700; letter-spacing: .01em; }
 .room-code { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid #cfc4b1; border-radius: 10px; background: #fffdf7; color: #17241f; cursor: pointer; }
 .room-code span { color: #788078; font-size: .72rem; }.room-code b { font-size: .86rem; letter-spacing: .16em; }.room-code svg { width: 14px; height: 14px; color: #13755a; }
 .sync-pill { display: inline-flex; align-items: center; gap: 5px; min-width: 62px; height: 28px; padding: 0 9px; border: 1px solid #cfc4b1; border-radius: 999px; background: rgba(255,255,255,.62); color: #647069; font-size: .65rem; font-weight: 800; }
