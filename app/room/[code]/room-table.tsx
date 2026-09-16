@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LanguageToggle, localizeServerText, pileName, useLanguage } from "@/components/language-provider";
 import { GENERAL_PILE_ID, type PlayingCard, type PublicPlayerBoard, type PublicRoom, type Suit, type TableCard, type TablePile, type TableToken, type TokenColor } from "@/lib/game";
+import { getTamQuocSatGeneralInfo } from "@/lib/tam-quoc-sat-general-rules";
 import { getTamQuocSatCardInfo } from "@/lib/tam-quoc-sat";
 
 declare global {
@@ -49,6 +50,12 @@ type CanvasMenu = CanvasSelection & { x: number; y: number };
 
 function canvasKey(type: CanvasSelection["type"], id: string) {
   return `${type}:${id}`;
+}
+
+function hasCardRules(card: PlayingCard) {
+  return card.cardType === "general"
+    ? Boolean(getTamQuocSatGeneralInfo(card.id))
+    : Boolean(getTamQuocSatCardInfo(card.cardType));
 }
 
 function BoardZones({ board, own, onZoneCard }: { board: PublicPlayerBoard; own?: boolean; onZoneCard?: (source: "equipment" | "judging", card: PlayingCard) => void }) {
@@ -263,6 +270,7 @@ export default function RoomTable() {
   const contextPile = canvasMenu?.type === "pile" ? room?.piles.find((pile) => pile.id === canvasMenu.id) : undefined;
   const contextCard = canvasMenu?.type === "card" ? room?.table.find((card) => card.id === canvasMenu.id) : undefined;
   const inspectedCardInfo = getTamQuocSatCardInfo(inspectedCard?.cardType);
+  const inspectedGeneralInfo = inspectedCard?.cardType === "general" ? getTamQuocSatGeneralInfo(inspectedCard.id) : undefined;
   const myTargets = room?.targets[playerId] ?? [];
   const isActing = pendingAction !== null;
   const syncLabel = t(syncStatus === "live" ? "live" : syncStatus);
@@ -524,7 +532,7 @@ export default function RoomTable() {
           </div>
           {selectedTableCard && <>
             {selectedTableCards.length > 1 && <Button size="sm" disabled={isActing} onClick={() => void makeSelectedPile()}><Layers3 /> {t("makePile")}</Button>}
-            {selectedTableCards.length === 1 && !selectedTableCard.faceDown && getTamQuocSatCardInfo(selectedTableCard.cardType) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedTableCard)}><BookOpenText /> {t("viewCardRule")}</Button>}
+            {selectedTableCards.length === 1 && !selectedTableCard.faceDown && hasCardRules(selectedTableCard) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedTableCard)}><BookOpenText /> {t("viewCardRule")}</Button>}
             <Button size="sm" variant="outline" disabled={isActing} onClick={() => void runCardAction("flip")}><FlipHorizontal2 /> {t("flip")}</Button>
             <Button size="icon-sm" variant="outline" aria-label={t("rotateLeft")} disabled={isActing} onClick={() => void runCardAction("rotate-left")}><RotateCcw /></Button>
             <Button size="icon-sm" variant="outline" aria-label={t("rotateRight")} disabled={isActing} onClick={() => void runCardAction("rotate-right")}><RotateCw /></Button>
@@ -549,7 +557,7 @@ export default function RoomTable() {
         </div>}
 
         {canvasMenu && <div className="canvas-context-menu" style={{ left: canvasMenu.x, top: canvasMenu.y }} role="menu" aria-label={t(canvasMenu.type === "pile" ? "pileActions" : "cardActions")}>
-          {canvasMenu.type === "card" && <><b>{selectedCardIds.length > 1 ? t("selectedCardCount", { count: selectedCardIds.length }) : t("cardActions")}</b>{selectedCardIds.length === 1 && contextCard && !contextCard.faceDown && getTamQuocSatCardInfo(contextCard.cardType) && <button type="button" role="menuitem" onClick={() => { setInspectedCard(contextCard); setCanvasMenu(null); }}><BookOpenText /> {t("viewCardRule")}</button>}{selectedCardIds.length > 1 && <button type="button" role="menuitem" onClick={() => void makeSelectedPile()}><Layers3 /> {t("makeFaceDownPile")}</button>}<button type="button" role="menuitem" onClick={() => void runCardAction("flip")}><FlipHorizontal2 /> {t("flip")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("rotate-right")}><RotateCw /> {t("rotate15")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("front")}><Layers3 /> {t("bringFront")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("hand")}><Hand /> {t("moveMyHand")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("discard")}><Trash2 /> {t("discard")}</button></>}
+          {canvasMenu.type === "card" && <><b>{selectedCardIds.length > 1 ? t("selectedCardCount", { count: selectedCardIds.length }) : t("cardActions")}</b>{selectedCardIds.length === 1 && contextCard && !contextCard.faceDown && hasCardRules(contextCard) && <button type="button" role="menuitem" onClick={() => { setInspectedCard(contextCard); setCanvasMenu(null); }}><BookOpenText /> {t("viewCardRule")}</button>}{selectedCardIds.length > 1 && <button type="button" role="menuitem" onClick={() => void makeSelectedPile()}><Layers3 /> {t("makeFaceDownPile")}</button>}<button type="button" role="menuitem" onClick={() => void runCardAction("flip")}><FlipHorizontal2 /> {t("flip")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("rotate-right")}><RotateCw /> {t("rotate15")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("front")}><Layers3 /> {t("bringFront")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("hand")}><Hand /> {t("moveMyHand")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("discard")}><Trash2 /> {t("discard")}</button></>}
           {canvasMenu.type === "pile" && contextPile && <><b>{pileName(contextPile.label, language)} · {t("cards", { count: contextPile.cards.length })}</b><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "draw")}><Hand /> {t("drawToHand")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "play-top")}><Eye /> {t("playTop")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "shuffle")}><Shuffle /> {t("shufflePile")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "flip")}><FlipHorizontal2 /> {t("flipPile")}</button>{selectedCardIds.length > 0 && <button type="button" role="menuitem" onClick={async () => { if (await sendAction("add-cards-to-pile", { pileId: contextPile.id, cardIds: selectedCardIds })) { setSelectedCardIds([]); setCanvasMenu(null); } }}><Plus /> {t("addSelected")}</button>}<button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "spread")}><Sparkles /> {t("spreadCards")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "discard")}><Trash2 /> {t("discardPile")}</button></>}
         </div>}
 
@@ -588,7 +596,7 @@ export default function RoomTable() {
         {selectedCard && (
           <div className="card-action-bar" role="toolbar" aria-label={t("actionsFor", { name: selectedCard.name ?? selectedCard.rank })}>
             <span><b>{selectedCard.name ?? `${selectedCard.rank}${suitSymbol[selectedCard.suit]}`}</b><small>{selectedCard.cardType === "general" ? `${selectedCard.faction?.toUpperCase()} · ${selectedCard.maxHp ?? selectedCard.rank} ${t("hp")}` : `${selectedCard.rank}${suitSymbol[selectedCard.suit]}`}</small></span>
-            {getTamQuocSatCardInfo(selectedCard.cardType) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedCard)}><BookOpenText /> {t("viewCardRule")}</Button>}
+            {hasCardRules(selectedCard) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedCard)}><BookOpenText /> {t("viewCardRule")}</Button>}
             <Button size="sm" onClick={() => void moveSelected("table")} disabled={isActing}><Hand /> {t("play")}</Button>
             <Button size="sm" variant="outline" onClick={() => void moveSelected("table", undefined, true)} disabled={isActing}><EyeOff /> {t("faceDown")}</Button>
             {isTamQuocSat && selectedCard.cardType !== "general" && <Button size="sm" variant="outline" onClick={() => void moveSelected("equipment")} disabled={isActing}><Shield /> {t("equip")}</Button>}
@@ -602,7 +610,7 @@ export default function RoomTable() {
         {isTamQuocSat && selectedZone && (
           <div className="card-action-bar" role="toolbar" aria-label={t("actionsFor", { name: selectedZone.card.name ?? selectedZone.card.rank })}>
             <span><b>{selectedZone.card.name}</b><small>{t(selectedZone.source === "equipment" ? "equipZone" : "judgeZone")}</small></span>
-            {getTamQuocSatCardInfo(selectedZone.card.cardType) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedZone.card)}><BookOpenText /> {t("viewCardRule")}</Button>}
+            {hasCardRules(selectedZone.card) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedZone.card)}><BookOpenText /> {t("viewCardRule")}</Button>}
             <Button size="sm" onClick={async () => { if (await sendAction("move-zone-card", { source: selectedZone.source, cardId: selectedZone.card.id, destination: "hand" })) setSelectedZone(null); }}>{t("toHand")}</Button>
             <Button size="sm" variant="outline" onClick={async () => { if (await sendAction("move-zone-card", { source: selectedZone.source, cardId: selectedZone.card.id, destination: "table" })) setSelectedZone(null); }}>{t("play")}</Button>
             <Button size="sm" variant="outline" onClick={async () => { if (await sendAction("move-zone-card", { source: selectedZone.source, cardId: selectedZone.card.id, destination: "discard" })) setSelectedZone(null); }}><Trash2 /> {t("discard")}</Button>
@@ -611,15 +619,16 @@ export default function RoomTable() {
         )}
       </section>
 
-      <Dialog open={Boolean(inspectedCard && inspectedCardInfo)} onOpenChange={(open) => { if (!open) setInspectedCard(null); }}>
-        {inspectedCard && inspectedCardInfo && <DialogContent className="card-rule-dialog">
+      <Dialog open={Boolean(inspectedCard && (inspectedCardInfo || inspectedGeneralInfo))} onOpenChange={(open) => { if (!open) setInspectedCard(null); }}>
+        {inspectedCard && (inspectedCardInfo || inspectedGeneralInfo) && <DialogContent className="card-rule-dialog">
           <div className="card-rule-layout">
             <div className="card-rule-preview" style={{ backgroundImage: inspectedCard.asset ? `url("${inspectedCard.asset}")` : undefined }} role="img" aria-label={inspectedCard.name} />
             <div className="card-rule-copy">
-              <span className="card-rule-category">{t(`cardCategory_${inspectedCardInfo.category}`)}</span>
-              <DialogHeader><DialogTitle>{inspectedCard.name}</DialogTitle><DialogDescription>{inspectedCardInfo.nameEn} · {inspectedCard.rank}{suitSymbol[inspectedCard.suit]}</DialogDescription></DialogHeader>
-              <div className="card-rule-text"><BookOpenText /><div><b>{t("cardRule")}</b><p>{language === "vi" ? inspectedCardInfo.ruleVi : inspectedCardInfo.ruleEn}</p></div></div>
-              <p className="card-rule-note">{t("cardRuleNote")}</p>
+              <span className={`card-rule-category ${inspectedGeneralInfo ? `faction-${inspectedGeneralInfo.faction}` : ""}`}>{inspectedCardInfo ? t(`cardCategory_${inspectedCardInfo.category}`) : t("generalDefinition")}</span>
+              <DialogHeader><DialogTitle>{inspectedCard.name}</DialogTitle><DialogDescription>{inspectedCardInfo ? `${inspectedCardInfo.nameEn} · ${inspectedCard.rank}${suitSymbol[inspectedCard.suit]}` : `${t(`faction_${inspectedGeneralInfo?.faction}`)} · ${inspectedGeneralInfo?.maxHp} ${t("hp")}`}</DialogDescription></DialogHeader>
+              {inspectedCardInfo && <div className="card-rule-text"><BookOpenText /><div><b>{t("cardRule")}</b><p>{language === "vi" ? inspectedCardInfo.ruleVi : inspectedCardInfo.ruleEn}</p></div></div>}
+              {inspectedGeneralInfo && <div className="general-skill-rules"><div className="general-skill-heading"><BookOpenText /><b>{t("generalSkills")}</b></div>{inspectedGeneralInfo.skills.map((skill) => <article key={skill.id}><h3>{skill.nameVi}</h3><p>{skill.descriptionVi}</p></article>)}</div>}
+              <p className="card-rule-note">{t(inspectedGeneralInfo ? (language === "en" ? "generalRuleEnglishNote" : "generalRuleNote") : "cardRuleNote")}</p>
             </div>
           </div>
         </DialogContent>}
