@@ -115,7 +115,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = language;
-    document.title = language === "vi" ? "Bàn Bài — Bàn chơi bài trực tuyến" : "Bàn Bài — Your shared card table";
+    document.title = language === "vi" ? "Bàn Bài | Bàn chơi bài trực tuyến" : "Bàn Bài | Your shared card table";
     document.querySelector('meta[name="description"]')?.setAttribute("content", language === "vi" ? "Tạo phòng, mời bạn bè và cùng chơi bài trực tuyến." : "Create a room, invite friends, and play cards together online.");
   }, [language]);
 

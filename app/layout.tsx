@@ -4,7 +4,7 @@ import { LanguageProvider } from "@/components/language-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Bàn Bài — Bàn chơi bài trực tuyến",
+  title: "Bàn Bài | Bàn chơi bài trực tuyến",
   description: "Tạo phòng, mời bạn bè và cùng chơi bài trực tuyến.",
   icons: {
     icon: "/favicon.svg",
