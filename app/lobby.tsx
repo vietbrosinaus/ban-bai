@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LanguageToggle, localizeServerText, useLanguage } from "@/components/language-provider";
 import type { GameMode } from "@/lib/game";
 
 const previewCards = [
@@ -18,6 +19,7 @@ const previewCards = [
 
 export default function Lobby() {
   const router = useRouter();
+  const { language, t } = useLanguage();
   const [name, setName] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,12 +32,12 @@ export default function Lobby() {
     try {
       const response = await fetch("/api/rooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, game }) });
       const result = await response.json() as { code?: string; playerId?: string; error?: string };
-      if (!response.ok || !result.code || !result.playerId) throw new Error(result.error ?? "Could not create the table.");
+      if (!response.ok || !result.code || !result.playerId) throw new Error(result.error ?? t("createError"));
       localStorage.setItem(`ban-bai:${result.code}:player`, result.playerId);
       localStorage.setItem("ban-bai:name", name.trim());
       router.push(`/room/${result.code}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create the table.");
+      toast.error(error instanceof Error ? localizeServerText(error.message, language) : t("createError"));
     } finally {
       setBusy(false);
     }
@@ -49,12 +51,12 @@ export default function Lobby() {
     try {
       const response = await fetch(`/api/rooms/${encodeURIComponent(code)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "join", name }) });
       const result = await response.json() as { playerId?: string; error?: string };
-      if (!response.ok || !result.playerId) throw new Error(result.error ?? "Could not join that room.");
+      if (!response.ok || !result.playerId) throw new Error(result.error ?? t("joinError"));
       localStorage.setItem(`ban-bai:${code}:player`, result.playerId);
       localStorage.setItem("ban-bai:name", name.trim());
       router.push(`/room/${code}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not join that room.");
+      toast.error(error instanceof Error ? localizeServerText(error.message, language) : t("joinError"));
     } finally {
       setBusy(false);
     }
@@ -63,11 +65,14 @@ export default function Lobby() {
   return (
     <main className="lobby-shell">
       <header className="site-header">
-        <a className="brand" href="#" aria-label="Bàn Bài home">
+        <a className="brand" href="#" aria-label={t("home")}>
           <span className="brand-mark"><span>♠</span><span>♥</span></span>
           <span>Bàn Bài</span>
         </a>
-        <div className="header-status"><span className="status-pulse" /> No account needed</div>
+        <div className="header-tools">
+          <div className="header-status"><span className="status-pulse" /> {t("noAccount")}</div>
+          <LanguageToggle />
+        </div>
       </header>
 
       <section className="lobby-stage">
@@ -88,61 +93,61 @@ export default function Lobby() {
         </div>
 
         <div className="lobby-copy">
-          <p className="eyebrow">A table for your crew</p>
-          <h1>Cards on the table.<br />Friends in the room.</h1>
-          <p className="lobby-intro">Open a private room, share one link, and start playing. Built for the card games we grew up with.</p>
-          <div className="game-chips" aria-label="Available and planned games">
-            <span>Tiến Lên</span><span>Tá Lả</span><span>Tam Quốc Sát · live</span><span>+ custom games</span>
+          <p className="eyebrow">{t("heroEyebrow")}</p>
+          <h1>{t("heroTitle").split("\n").map((line, index) => <span key={line}>{line}{index === 0 && <br />}</span>)}</h1>
+          <p className="lobby-intro">{t("heroIntro")}</p>
+          <div className="game-chips" aria-label={t("availableGames")}>
+            <span>Tiến Lên</span><span>Tá Lả</span><span>{t("tamLive")}</span><span>{t("customGames")}</span>
           </div>
         </div>
 
         <div className="entry-panel">
           <div className="entry-heading">
             <div>
-              <p className="panel-kicker">Your seat is waiting</p>
-              <h2>Start playing</h2>
+              <p className="panel-kicker">{t("seatWaiting")}</p>
+              <h2>{t("startPlaying")}</h2>
             </div>
             <Layers3 aria-hidden="true" />
           </div>
 
           <form onSubmit={previewCreate} className="entry-form">
-            <label htmlFor="create-name">Your name</label>
-            <Input id="create-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Minh" autoComplete="nickname" maxLength={24} />
+            <label htmlFor="create-name">{t("yourName")}</label>
+            <Input id="create-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={t("namePlaceholder")} autoComplete="nickname" maxLength={24} />
             <fieldset className="game-picker">
-              <legend>Choose a deck</legend>
+              <legend>{t("chooseDeck")}</legend>
               <button type="button" className={game === "sandbox-52" ? "is-selected" : ""} onClick={() => setGame("sandbox-52")} aria-pressed={game === "sandbox-52"}>
-                <span className="picker-icon">♠</span><span><b>Classic cards</b><small>52-card sandbox</small></span>
+                <span className="picker-icon">♠</span><span><b>{t("classicCards")}</b><small>{t("sandbox52")}</small></span>
               </button>
               <button type="button" className={game === "tam-quoc-sat" ? "is-selected" : ""} onClick={() => setGame("tam-quoc-sat")} aria-pressed={game === "tam-quoc-sat"}>
-                <span className="picker-icon picker-tqs">殺</span><span><b>Tam Quốc Sát</b><small>108-card standard deck</small></span>
+                <span className="picker-icon picker-tqs">殺</span><span><b>Tam Quốc Sát</b><small>{t("tamDeck")}</small></span>
               </button>
             </fieldset>
             <Button className="primary-action" type="submit" disabled={!name.trim() || busy}>
-              {busy ? "Setting the table…" : "Create a table"} {!busy && <ArrowRight />}
+              {busy ? t("settingTable") : t("createTable")} {!busy && <ArrowRight />}
             </Button>
           </form>
 
-          <div className="or-divider"><span>or join your friends</span></div>
+          <div className="or-divider"><span>{t("joinFriends")}</span></div>
 
           <form onSubmit={previewJoin} className="join-row">
             <div>
-              <label className="sr-only" htmlFor="room-code">Room code</label>
-              <Input id="room-code" value={roomCode} onChange={(event) => setRoomCode(event.target.value.toUpperCase())} placeholder="ROOM CODE" maxLength={6} />
+              <label className="sr-only" htmlFor="room-code">{t("roomCode")}</label>
+              <Input id="room-code" value={roomCode} onChange={(event) => setRoomCode(event.target.value.toUpperCase())} placeholder={t("roomCode")} maxLength={6} />
             </div>
-            <Button type="submit" variant="outline" disabled={!name.trim() || roomCode.length < 4 || busy}>Join room</Button>
+            <Button type="submit" variant="outline" disabled={!name.trim() || roomCode.length < 4 || busy}>{t("joinRoom")}</Button>
           </form>
 
           <div className="entry-notes">
-            <span><Users /> 1–10 players</span>
-            <span><Copy /> Invite by link</span>
+            <span><Users /> {t("players")}</span>
+            <span><Copy /> {t("inviteByLink")}</span>
           </div>
         </div>
       </section>
 
       <footer className="site-footer">
-        <span>52-card sandbox</span>
-        <span>Private room links</span>
-        <span>Live shared table</span>
+        <span>{t("sandbox52")}</span>
+        <span>{t("privateLinks")}</span>
+        <span>{t("liveTable")}</span>
       </footer>
     </main>
   );
