@@ -5,6 +5,13 @@ type TamQuocCard = {
   asset: string;
 };
 
+export type TamQuocSatCardInfo = {
+  nameEn: string;
+  category: "basic" | "trick" | "delayed-trick" | "weapon" | "armor" | "mount";
+  ruleVi: string;
+  ruleEn: string;
+};
+
 type CardPrint = readonly [cardType: keyof typeof cards, suit: Suit, rank: number];
 
 const cards = {
@@ -54,6 +61,59 @@ const cards = {
   dayuan: { name: "Đại Uyển", asset: "DaYuan" },
   zixing: { name: "Tử Tinh", asset: "ZiXing" },
 } as const satisfies Record<string, TamQuocCard>;
+
+export const tamQuocSatCardInfo = {
+  slash: { nameEn: "Slash", category: "basic", ruleVi: "Trong giai đoạn ra bài, chọn một người trong tầm đánh. Người đó chịu 1 sát thương nếu không dùng Ngự. Thông thường mỗi giai đoạn chỉ dùng 1 lá Sát.", ruleEn: "During your play phase, target a player in attack range. They take 1 damage unless they play Dodge. Normally limited to one Slash per play phase." },
+  fire_slash: { nameEn: "Fire Slash", category: "basic", ruleVi: "Dùng như Sát, nhưng gây 1 sát thương Hỏa. Sát thương Hỏa có thể truyền giữa những người đang bị Xích.", ruleEn: "Used like Slash, but deals 1 fire damage. Fire damage can spread between chained players." },
+  thunder_slash: { nameEn: "Thunder Slash", category: "basic", ruleVi: "Dùng như Sát, nhưng gây 1 sát thương Lôi. Sát thương Lôi có thể truyền giữa những người đang bị Xích.", ruleEn: "Used like Slash, but deals 1 thunder damage. Thunder damage can spread between chained players." },
+  dodge: { nameEn: "Dodge", category: "basic", ruleVi: "Dùng để đáp lại Sát nhằm vô hiệu hiệu quả của lá Sát đó. Cũng có thể dùng khi một hiệu ứng như Vạn Tiễn Tề Phát yêu cầu.", ruleEn: "Play in response to Slash to avoid its effect. It may also be played when an effect such as Archery Attack requires it." },
+  peach: { nameEn: "Peach", category: "basic", ruleVi: "Hồi 1 sinh lực cho chính bạn trong giai đoạn ra bài, hoặc hồi 1 sinh lực cho một người đang hấp hối khi cứu họ.", ruleEn: "Recover 1 health during your play phase, or restore 1 health to a dying player when rescuing them." },
+  alcohol: { nameEn: "Alcohol", category: "basic", ruleVi: "Mỗi giai đoạn ra bài dùng tối đa 1 lần: lá Sát tiếp theo trong lượt gây thêm 1 sát thương. Khi hấp hối, bạn có thể tự dùng để hồi 1 sinh lực.", ruleEn: "Once per play phase, make your next Slash this turn deal +1 damage. While dying, you may use it on yourself to recover 1 health." },
+  duel: { nameEn: "Duel", category: "trick", ruleVi: "Chọn một người khác. Bắt đầu từ họ, hai bên luân phiên đánh Sát; người đầu tiên không đánh được Sát chịu 1 sát thương từ người kia.", ruleEn: "Target another player. Starting with them, alternate playing Slash; the first player who cannot do so takes 1 damage from the other." },
+  dismantlement: { nameEn: "Dismantlement", category: "trick", ruleVi: "Chọn một người khác có bài trong tay, khu trang bị hoặc khu phán xét; bỏ 1 lá trong một trong các khu đó.", ruleEn: "Target another player with a card in hand, equipment, or judgment area; discard one card from one of those areas." },
+  snatch: { nameEn: "Snatch", category: "trick", ruleVi: "Chọn một người khác ở khoảng cách 1 có bài trong tay, khu trang bị hoặc khu phán xét; lấy 1 lá từ một trong các khu đó.", ruleEn: "Target another player at distance 1 with a card in hand, equipment, or judgment area; take one card from one of those areas." },
+  archery_attack: { nameEn: "Archery Attack", category: "trick", ruleVi: "Mỗi người chơi khác lần lượt phải đánh 1 lá Ngự; ai không đánh được chịu 1 sát thương.", ruleEn: "Each other player must play Dodge in turn or take 1 damage." },
+  savage_assault: { nameEn: "Savage Assault", category: "trick", ruleVi: "Mỗi người chơi khác lần lượt phải đánh 1 lá Sát; ai không đánh được chịu 1 sát thương.", ruleEn: "Each other player must play Slash in turn or take 1 damage." },
+  ex_nihilo: { nameEn: "Ex Nihilo", category: "trick", ruleVi: "Dùng cho bản thân để rút 2 lá bài.", ruleEn: "Play on yourself to draw 2 cards." },
+  god_salvation: { nameEn: "God Salvation", category: "trick", ruleVi: "Theo thứ tự lượt, mỗi người đang bị thương hồi 1 sinh lực.", ruleEn: "In turn order, each wounded player recovers 1 health." },
+  amazing_grace: { nameEn: "Amazing Grace", category: "trick", ruleVi: "Lật số lá bằng số người còn sống. Theo thứ tự lượt, mỗi người chọn và nhận 1 lá; bỏ các lá còn lại.", ruleEn: "Reveal one card per living player. In turn order, each player takes one; discard any cards left over." },
+  collateral: { nameEn: "Collateral", category: "trick", ruleVi: "Chọn một người có vũ khí, rồi chọn người thứ hai trong tầm đánh của họ. Người thứ nhất phải dùng Sát lên người thứ hai, nếu không phải giao vũ khí cho bạn.", ruleEn: "Choose a player with a weapon, then another player in their attack range. The first must Slash the second or give you their weapon." },
+  nullification: { nameEn: "Nullification", category: "trick", ruleVi: "Dùng trước khi hiệu quả của một Cẩm Nang tác dụng lên mục tiêu để vô hiệu hiệu quả đó, hoặc để vô hiệu một lá Vô Giải Khả Kích khác.", ruleEn: "Play before a trick affects its target to cancel that effect, or to cancel another Nullification." },
+  heg_nullification: { nameEn: "Hegemony Nullification", category: "trick", ruleVi: "Trong luật Quốc Chiến, vô hiệu hiệu quả Cẩm Nang đối với một người hoặc cả một thế lực, hoặc vô hiệu một lá Vô Giải Khả Kích khác.", ruleEn: "In Hegemony rules, cancel a trick's effect on one player or an entire faction, or cancel another Nullification." },
+  iron_chain: { nameEn: "Iron Chain", category: "trick", ruleVi: "Chọn 1–2 người để đổi trạng thái Xích. Sát thương thuộc tính truyền giữa những người đang Xích. Có thể tái đúc: bỏ lá này và rút 1 lá.", ruleEn: "Toggle the chained state of one or two players. Elemental damage spreads between chained players. May be recast: discard it and draw 1 card." },
+  fire_attack: { nameEn: "Fire Attack", category: "trick", ruleVi: "Chọn một người có bài trên tay; họ lật 1 lá. Nếu bạn bỏ 1 lá cùng chất, họ chịu 1 sát thương Hỏa.", ruleEn: "Target a player with cards in hand; they reveal one. If you discard a card of the same suit, they take 1 fire damage." },
+  await_exhausted: { nameEn: "Await Exhausted", category: "trick", ruleVi: "Bạn và những người cùng thế lực lần lượt rút 2 lá, sau đó mỗi người bỏ 2 lá.", ruleEn: "You and players of your faction each draw 2 cards, then each discard 2 cards." },
+  known_both: { nameEn: "Known Both", category: "trick", ruleVi: "Chọn một người khác để xem một lá tướng đang úp hoặc xem bài trên tay của họ. Có thể tái đúc: bỏ lá này và rút 1 lá.", ruleEn: "Target another player to view one hidden general or their hand. May be recast: discard it and draw 1 card." },
+  befriend_attacking: { nameEn: "Befriend Attacking", category: "trick", ruleVi: "Chọn một người thuộc thế lực khác. Người đó rút 1 lá, sau đó bạn rút 3 lá.", ruleEn: "Target a player of a different faction. They draw 1 card, then you draw 3 cards." },
+  indulgence: { nameEn: "Indulgence", category: "delayed-trick", ruleVi: "Đặt vào khu phán xét của người khác. Đầu lượt họ phán xét: nếu không phải Cơ, họ bỏ qua giai đoạn ra bài; sau đó bỏ lá này.", ruleEn: "Place in another player's judgment area. At the start of their turn, judge: unless it is a heart, they skip their play phase; then discard this card." },
+  supply_shortage: { nameEn: "Supply Shortage", category: "delayed-trick", ruleVi: "Đặt vào khu phán xét của người ở khoảng cách 1. Đầu lượt họ phán xét: nếu không phải Tép, họ bỏ qua giai đoạn rút bài; sau đó bỏ lá này.", ruleEn: "Place in the judgment area of a player at distance 1. At the start of their turn, judge: unless it is a club, they skip their draw phase; then discard this card." },
+  lightning: { nameEn: "Lightning", category: "delayed-trick", ruleVi: "Phán xét ở đầu lượt: nếu là Bích 2–9, người đó chịu 3 sát thương Lôi và bỏ lá này; nếu không, chuyển Thiểm Điện sang người kế tiếp.", ruleEn: "Judge at the start of the turn: on spades 2–9, that player takes 3 thunder damage and discards this card; otherwise pass Lightning to the next player." },
+  crossbow: { nameEn: "Crossbow", category: "weapon", ruleVi: "Tầm đánh 1. Trong giai đoạn ra bài, bạn có thể dùng số lượng Sát không giới hạn.", ruleEn: "Attack range 1. During your play phase, you may use any number of Slash cards." },
+  double_sword: { nameEn: "Double Sword", category: "weapon", ruleVi: "Tầm đánh 2. Khi Sát một người khác giới tính, bạn có thể buộc họ bỏ 1 lá trên tay; nếu họ không bỏ, bạn rút 1 lá.", ruleEn: "Attack range 2. When you Slash a player of the opposite gender, you may make them discard a hand card; if they do not, draw 1 card." },
+  qinggang_sword: { nameEn: "Qinggang Sword", category: "weapon", ruleVi: "Tầm đánh 2. Khi Sát chỉ định mục tiêu, bỏ qua hiệu quả phòng cụ của người đó trong lần kết toán này.", ruleEn: "Attack range 2. When your Slash targets a player, ignore their armor for that resolution." },
+  ice_sword: { nameEn: "Ice Sword", category: "weapon", ruleVi: "Tầm đánh 2. Khi Sát sắp gây sát thương cho người có bài, bạn có thể ngăn sát thương và thay vào đó lần lượt bỏ tối đa 2 lá của họ.", ruleEn: "Attack range 2. Before your Slash damages a player who has cards, you may prevent the damage and instead discard up to two of their cards, one at a time." },
+  spear: { nameEn: "Spear", category: "weapon", ruleVi: "Tầm đánh 3. Bạn có thể dùng hoặc đánh ra 2 lá trên tay như 1 lá Sát.", ruleEn: "Attack range 3. You may use or play two hand cards as one Slash." },
+  fan: { nameEn: "Fan", category: "weapon", ruleVi: "Tầm đánh 4. Bạn có thể dùng một lá Sát thường như Hỏa Sát.", ruleEn: "Attack range 4. You may use a normal Slash as Fire Slash." },
+  axe: { nameEn: "Axe", category: "weapon", ruleVi: "Tầm đánh 3. Khi Sát bị Ngự hóa giải, bạn có thể bỏ 2 lá để lá Sát đó vẫn gây sát thương.", ruleEn: "Attack range 3. When your Slash is dodged, you may discard 2 cards to make it still deal damage." },
+  kylin_bow: { nameEn: "Kylin Bow", category: "weapon", ruleVi: "Tầm đánh 5. Sau khi Sát gây sát thương, bạn có thể bỏ 1 tọa kỵ trong khu trang bị của mục tiêu.", ruleEn: "Attack range 5. After your Slash deals damage, you may discard one mount from the target's equipment area." },
+  six_swords: { nameEn: "Six Swords", category: "weapon", ruleVi: "Tầm đánh 2. Những người khác cùng thế lực với bạn được tăng tầm đánh thêm 1.", ruleEn: "Attack range 2. Other players of your faction gain +1 attack range." },
+  triblade: { nameEn: "Triblade", category: "weapon", ruleVi: "Tầm đánh 3. Sau khi Sát gây sát thương, bạn có thể bỏ 1 lá trên tay để gây 1 sát thương cho một người khác cách mục tiêu 1.", ruleEn: "Attack range 3. After your Slash deals damage, you may discard a hand card to deal 1 damage to another player at distance 1 from the target." },
+  eight_diagram: { nameEn: "Eight Diagram", category: "armor", ruleVi: "Khi cần dùng Ngự, bạn có thể phán xét; nếu kết quả đỏ, xem như đã dùng 1 lá Ngự.", ruleEn: "When you need to play Dodge, you may judge; on a red card, treat it as if you played Dodge." },
+  renwang_shield: { nameEn: "Renwang Shield", category: "armor", ruleVi: "Khóa định: các lá Sát màu đen không có hiệu quả với bạn.", ruleEn: "Locked: black Slash cards have no effect on you." },
+  silver_lion: { nameEn: "Silver Lion", category: "armor", ruleVi: "Khóa định: mỗi lần chịu hơn 1 sát thương, giảm xuống còn 1. Khi mất Bạch Ngân Sư Tử khỏi khu trang bị, hồi 1 sinh lực.", ruleEn: "Locked: whenever you would take more than 1 damage, reduce it to 1. When Silver Lion leaves your equipment area, recover 1 health." },
+  vine: { nameEn: "Vine", category: "armor", ruleVi: "Khóa định: Nam Man Nhập Xâm, Vạn Tiễn Tề Phát và Sát thường không có hiệu quả với bạn; sát thương Hỏa bạn chịu tăng thêm 1.", ruleEn: "Locked: Savage Assault, Archery Attack, and normal Slash have no effect on you; fire damage you take is increased by 1." },
+  jueying: { nameEn: "Jueying", category: "mount", ruleVi: "Tọa kỵ +1: người khác tính khoảng cách đến bạn tăng 1.", ruleEn: "+1 mount: other players calculate their distance to you as 1 greater." },
+  dilu: { nameEn: "Dilu", category: "mount", ruleVi: "Tọa kỵ +1: người khác tính khoảng cách đến bạn tăng 1.", ruleEn: "+1 mount: other players calculate their distance to you as 1 greater." },
+  zhuahuangfeidian: { nameEn: "Zhua Huang Fei Dian", category: "mount", ruleVi: "Tọa kỵ +1: người khác tính khoảng cách đến bạn tăng 1.", ruleEn: "+1 mount: other players calculate their distance to you as 1 greater." },
+  chitu: { nameEn: "Chi Tu", category: "mount", ruleVi: "Tọa kỵ −1: bạn tính khoảng cách đến người khác giảm 1.", ruleEn: "−1 mount: calculate your distance to other players as 1 less." },
+  dayuan: { nameEn: "Da Yuan", category: "mount", ruleVi: "Tọa kỵ −1: bạn tính khoảng cách đến người khác giảm 1.", ruleEn: "−1 mount: calculate your distance to other players as 1 less." },
+  zixing: { nameEn: "Zi Xing", category: "mount", ruleVi: "Tọa kỵ −1: bạn tính khoảng cách đến người khác giảm 1.", ruleEn: "−1 mount: calculate your distance to other players as 1 less." },
+} as const satisfies Record<keyof typeof cards, TamQuocSatCardInfo>;
+
+export function getTamQuocSatCardInfo(cardType?: string) {
+  if (!cardType || !(cardType in tamQuocSatCardInfo)) return undefined;
+  return tamQuocSatCardInfo[cardType as keyof typeof tamQuocSatCardInfo];
+}
 
 const prints: readonly CardPrint[] = [
   ["slash", "spades", 5], ["slash", "spades", 7], ["slash", "spades", 8], ["slash", "spades", 8], ["slash", "spades", 9], ["slash", "spades", 10], ["slash", "spades", 11],

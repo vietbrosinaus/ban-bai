@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, CircleDot, Copy, Crown, Crosshair, Eye, EyeOff, FlipHorizontal2, Hand, Heart, Layers3, Link2, LoaderCircle, LogOut, Minus, Move, Plus, Redo2, RefreshCw, RotateCcw, RotateCw, Shield, Shuffle, Sparkles, Trash2, Undo2, Users, Wifi, WifiOff } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BookOpenText, Check, CircleDot, Copy, Crown, Crosshair, Eye, EyeOff, FlipHorizontal2, Hand, Heart, Layers3, Link2, LoaderCircle, LogOut, Minus, Move, Plus, Redo2, RefreshCw, RotateCcw, RotateCw, Shield, Shuffle, Sparkles, Trash2, Undo2, Users, Wifi, WifiOff } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LanguageToggle, localizeServerText, pileName, useLanguage } from "@/components/language-provider";
 import type { HiddenGeneral, PlayingCard, PublicPlayerBoard, PublicRoom, SelectedGeneral, Suit, TableCard, TablePile, TableToken, TokenColor } from "@/lib/game";
+import { getTamQuocSatCardInfo } from "@/lib/tam-quoc-sat";
 
 declare global {
   interface Document {
@@ -94,6 +95,7 @@ export default function RoomTable() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
   const [dragOver, setDragOver] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [inspectedCard, setInspectedCard] = useState<PlayingCard | null>(null);
   const [selectedZone, setSelectedZone] = useState<{ source: "equipment" | "judging"; card: PlayingCard } | null>(null);
   const [giveTargetId, setGiveTargetId] = useState("");
   const [generalsOpen, setGeneralsOpen] = useState(false);
@@ -276,6 +278,8 @@ export default function RoomTable() {
   const selectedToken = canvasSelection?.type === "token" ? room?.tokens.find((token) => token.id === canvasSelection.id) : undefined;
   const selectedPile = canvasSelection?.type === "pile" ? room?.piles.find((pile) => pile.id === canvasSelection.id) : undefined;
   const contextPile = canvasMenu?.type === "pile" ? room?.piles.find((pile) => pile.id === canvasMenu.id) : undefined;
+  const contextCard = canvasMenu?.type === "card" ? room?.table.find((card) => card.id === canvasMenu.id) : undefined;
+  const inspectedCardInfo = getTamQuocSatCardInfo(inspectedCard?.cardType);
   const myTargets = room?.targets[playerId] ?? [];
   const isActing = pendingAction !== null;
   const syncLabel = t(syncStatus === "live" ? "live" : syncStatus);
@@ -546,6 +550,7 @@ export default function RoomTable() {
           </div>
           {selectedTableCard && <>
             {selectedTableCards.length > 1 && <Button size="sm" disabled={isActing} onClick={() => void makeSelectedPile()}><Layers3 /> {t("makePile")}</Button>}
+            {selectedTableCards.length === 1 && !selectedTableCard.faceDown && getTamQuocSatCardInfo(selectedTableCard.cardType) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedTableCard)}><BookOpenText /> {t("viewCardRule")}</Button>}
             <Button size="sm" variant="outline" disabled={isActing} onClick={() => void runCardAction("flip")}><FlipHorizontal2 /> {t("flip")}</Button>
             <Button size="icon-sm" variant="outline" aria-label={t("rotateLeft")} disabled={isActing} onClick={() => void runCardAction("rotate-left")}><RotateCcw /></Button>
             <Button size="icon-sm" variant="outline" aria-label={t("rotateRight")} disabled={isActing} onClick={() => void runCardAction("rotate-right")}><RotateCw /></Button>
@@ -570,7 +575,7 @@ export default function RoomTable() {
         </div>}
 
         {canvasMenu && <div className="canvas-context-menu" style={{ left: canvasMenu.x, top: canvasMenu.y }} role="menu" aria-label={t(canvasMenu.type === "pile" ? "pileActions" : "cardActions")}>
-          {canvasMenu.type === "card" && <><b>{selectedCardIds.length > 1 ? t("selectedCardCount", { count: selectedCardIds.length }) : t("cardActions")}</b>{selectedCardIds.length > 1 && <button type="button" role="menuitem" onClick={() => void makeSelectedPile()}><Layers3 /> {t("makeFaceDownPile")}</button>}<button type="button" role="menuitem" onClick={() => void runCardAction("flip")}><FlipHorizontal2 /> {t("flip")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("rotate-right")}><RotateCw /> {t("rotate15")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("front")}><Layers3 /> {t("bringFront")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("hand")}><Hand /> {t("moveMyHand")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("discard")}><Trash2 /> {t("discard")}</button></>}
+          {canvasMenu.type === "card" && <><b>{selectedCardIds.length > 1 ? t("selectedCardCount", { count: selectedCardIds.length }) : t("cardActions")}</b>{selectedCardIds.length === 1 && contextCard && !contextCard.faceDown && getTamQuocSatCardInfo(contextCard.cardType) && <button type="button" role="menuitem" onClick={() => { setInspectedCard(contextCard); setCanvasMenu(null); }}><BookOpenText /> {t("viewCardRule")}</button>}{selectedCardIds.length > 1 && <button type="button" role="menuitem" onClick={() => void makeSelectedPile()}><Layers3 /> {t("makeFaceDownPile")}</button>}<button type="button" role="menuitem" onClick={() => void runCardAction("flip")}><FlipHorizontal2 /> {t("flip")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("rotate-right")}><RotateCw /> {t("rotate15")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("front")}><Layers3 /> {t("bringFront")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("hand")}><Hand /> {t("moveMyHand")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("discard")}><Trash2 /> {t("discard")}</button></>}
           {canvasMenu.type === "pile" && contextPile && <><b>{pileName(contextPile.label, language)} · {t("cards", { count: contextPile.cards.length })}</b><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "draw")}><Hand /> {t("drawToHand")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "play-top")}><Eye /> {t("playTop")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "shuffle")}><Shuffle /> {t("shufflePile")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "flip")}><FlipHorizontal2 /> {t("flipPile")}</button>{selectedCardIds.length > 0 && <button type="button" role="menuitem" onClick={async () => { if (await sendAction("add-cards-to-pile", { pileId: contextPile.id, cardIds: selectedCardIds })) { setSelectedCardIds([]); setCanvasMenu(null); } }}><Plus /> {t("addSelected")}</button>}<button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "spread")}><Sparkles /> {t("spreadCards")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "discard")}><Trash2 /> {t("discardPile")}</button></>}
         </div>}
 
@@ -613,6 +618,7 @@ export default function RoomTable() {
         {selectedCard && (
           <div className="card-action-bar" role="toolbar" aria-label={t("actionsFor", { name: selectedCard.name ?? selectedCard.rank })}>
             <span><b>{selectedCard.name ?? `${selectedCard.rank}${suitSymbol[selectedCard.suit]}`}</b><small>{selectedCard.rank}{suitSymbol[selectedCard.suit]}</small></span>
+            {getTamQuocSatCardInfo(selectedCard.cardType) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedCard)}><BookOpenText /> {t("viewCardRule")}</Button>}
             <Button size="sm" onClick={() => void moveSelected("table")} disabled={isActing}><Hand /> {t("play")}</Button>
             <Button size="sm" variant="outline" onClick={() => void moveSelected("table", undefined, true)} disabled={isActing}><EyeOff /> {t("faceDown")}</Button>
             {isTamQuocSat && <Button size="sm" variant="outline" onClick={() => void moveSelected("equipment")} disabled={isActing}><Shield /> {t("equip")}</Button>}
@@ -626,6 +632,7 @@ export default function RoomTable() {
         {isTamQuocSat && selectedZone && (
           <div className="card-action-bar" role="toolbar" aria-label={t("actionsFor", { name: selectedZone.card.name ?? selectedZone.card.rank })}>
             <span><b>{selectedZone.card.name}</b><small>{t(selectedZone.source === "equipment" ? "equipZone" : "judgeZone")}</small></span>
+            {getTamQuocSatCardInfo(selectedZone.card.cardType) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedZone.card)}><BookOpenText /> {t("viewCardRule")}</Button>}
             <Button size="sm" onClick={async () => { if (await sendAction("move-zone-card", { source: selectedZone.source, cardId: selectedZone.card.id, destination: "hand" })) setSelectedZone(null); }}>{t("toHand")}</Button>
             <Button size="sm" variant="outline" onClick={async () => { if (await sendAction("move-zone-card", { source: selectedZone.source, cardId: selectedZone.card.id, destination: "table" })) setSelectedZone(null); }}>{t("play")}</Button>
             <Button size="sm" variant="outline" onClick={async () => { if (await sendAction("move-zone-card", { source: selectedZone.source, cardId: selectedZone.card.id, destination: "discard" })) setSelectedZone(null); }}><Trash2 /> {t("discard")}</Button>
@@ -651,6 +658,20 @@ export default function RoomTable() {
           <p className="random-general-note">{t("redrawHint")}</p>
           <div className="dialog-actions"><Button onClick={() => void drawGenerals()} disabled={isActing}>{pendingAction === "draw-generals" ? <LoaderCircle className="spin" /> : <Shuffle />}{t(currentBoard?.generals.some(isVisibleGeneral) ? "redrawGenerals" : "drawTwoGenerals")}</Button></div>
         </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(inspectedCard && inspectedCardInfo)} onOpenChange={(open) => { if (!open) setInspectedCard(null); }}>
+        {inspectedCard && inspectedCardInfo && <DialogContent className="card-rule-dialog">
+          <div className="card-rule-layout">
+            <div className="card-rule-preview" style={{ backgroundImage: inspectedCard.asset ? `url("${inspectedCard.asset}")` : undefined }} role="img" aria-label={inspectedCard.name} />
+            <div className="card-rule-copy">
+              <span className="card-rule-category">{t(`cardCategory_${inspectedCardInfo.category}`)}</span>
+              <DialogHeader><DialogTitle>{inspectedCard.name}</DialogTitle><DialogDescription>{inspectedCardInfo.nameEn} · {inspectedCard.rank}{suitSymbol[inspectedCard.suit]}</DialogDescription></DialogHeader>
+              <div className="card-rule-text"><BookOpenText /><div><b>{t("cardRule")}</b><p>{language === "vi" ? inspectedCardInfo.ruleVi : inspectedCardInfo.ruleEn}</p></div></div>
+              <p className="card-rule-note">{t("cardRuleNote")}</p>
+            </div>
+          </div>
+        </DialogContent>}
       </Dialog>
 
       <Dialog open={discardOpen} onOpenChange={setDiscardOpen}>
