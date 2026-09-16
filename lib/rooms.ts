@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 
-import { cleanName, createDeck, createPlayerBoard, GameMode, normalizeRoomState, playerColors, PlayingCard, publicRoom, RoomState, seatJoinOrder, shuffle, TableCard } from "@/lib/game";
+import { cleanName, createDeck, createPlayerBoard, GameMode, normalizeRoomState, playerColors, PlayingCard, publicRoom, RoomState, seatJoinOrder, shuffle, TableCard, TokenColor } from "@/lib/game";
 import { tamQuocSatGeneralById } from "@/lib/tam-quoc-sat-generals";
 
 type RoomRow = { state: RoomState | string; version: number };
@@ -31,6 +31,29 @@ function newPlayer(id: string, name: string, index: number, occupiedSeats: numbe
 
 function toPlayingCard(card: TableCard): PlayingCard {
   return { id: card.id, rank: card.rank, suit: card.suit, cardType: card.cardType, name: card.name, asset: card.asset };
+}
+
+function clampPosition(value: unknown, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(4, Math.min(96, number)) : fallback;
+}
+
+function topLayer(room: RoomState) {
+  return Math.max(0, ...room.table.map((card) => card.zIndex), ...room.tokens.map((token) => token.zIndex)) + 1;
+}
+
+function tableCard(room: RoomState, card: PlayingCard, playerId: string, data: Record<string, unknown> = {}): TableCard {
+  const spread = room.table.length % 5;
+  return {
+    ...card,
+    playedBy: playerId,
+    playedAt: Date.now(),
+    x: clampPosition(data.x, 44 + spread * 3),
+    y: clampPosition(data.y, 48 + (spread % 2) * 4),
+    rotation: Math.max(-180, Math.min(180, Number(data.rotation) || 0)),
+    faceDown: Boolean(data.faceDown),
+    zIndex: topLayer(room),
+  };
 }
 
 async function readRow(code: string): Promise<RoomRow | null> {
@@ -67,6 +90,7 @@ export async function createRoom(nameValue: unknown, gameValue?: unknown) {
       hands: { [playerId]: [] },
       deck: shuffle(createDeck(game)),
       table: [],
+      tokens: [],
       discard: [],
       boards: { [playerId]: createPlayerBoard() },
       activePlayerId: playerId,
@@ -172,7 +196,7 @@ export async function performAction(code: string, playerId: string, action: stri
         room.hands[targetId].push(card);
         room.lastAction = `${player.name} gave a card to ${target.name}`;
       } else {
-        room.table.push({ ...card, playedBy: playerId, playedAt: Date.now() });
+        room.table.push(tableCard(room, card, playerId, data));
         room.lastAction = `${player.name} played ${card.name ?? card.rank}`;
       }
       return room;
@@ -194,7 +218,7 @@ export async function performAction(code: string, playerId: string, action: stri
       const [card] = zone.splice(index, 1);
       const destination = String(data.destination ?? "discard");
       if (destination === "hand") room.hands[playerId].push(card);
-      else if (destination === "table") room.table.push({ ...card, playedBy: playerId, playedAt: Date.now() });
+      else if (destination === "table") room.table.push(tableCard(room, card, playerId, data));
       else room.discard.push(card);
       room.lastAction = `${player.name} moved ${card.name ?? card.rank} from ${source}`;
       return room;
@@ -208,10 +232,75 @@ export async function performAction(code: string, playerId: string, action: stri
       return room;
     }
     if (action === "clear-table") {
-      if (!room.table.length) throw new RoomError("The play area is already empty.", 409);
+      if (!room.table.length && !room.tokens.length) throw new RoomError("The canvas is already empty.", 409);
       room.discard.push(...room.table.map(toPlayingCard));
       room.table = [];
-      room.lastAction = `${player.name} cleared the play area`;
+      room.tokens = [];
+      room.lastAction = `${player.name} cleared the canvas`;
+      return room;
+    }
+    if (action === "move-table-item") {
+      const itemType = String(data.itemType ?? "card");
+      const itemId = String(data.itemId ?? "");
+      const item = itemType === "token" ? room.tokens.find((token) => token.id === itemId) : room.table.find((card) => card.id === itemId);
+      if (!item) throw new RoomError("That item is no longer on the canvas.", 409);
+      item.x = clampPosition(data.x, item.x);
+      item.y = clampPosition(data.y, item.y);
+      item.zIndex = topLayer(room);
+      room.lastAction = `${player.name} moved an item`;
+      return room;
+    }
+    if (action === "table-card-action") {
+      const index = room.table.findIndex((card) => card.id === String(data.cardId ?? ""));
+      if (index < 0) throw new RoomError("That card is no longer on the canvas.", 409);
+      const card = room.table[index];
+      const cardAction = String(data.cardAction ?? "");
+      if (cardAction === "flip") card.faceDown = !card.faceDown;
+      else if (cardAction === "rotate-left") card.rotation = ((card.rotation - 15 + 180) % 360 + 360) % 360 - 180;
+      else if (cardAction === "rotate-right") card.rotation = ((card.rotation + 15 + 180) % 360 + 360) % 360 - 180;
+      else if (cardAction === "front") card.zIndex = topLayer(room);
+      else if (cardAction === "hand") {
+        room.table.splice(index, 1);
+        room.hands[playerId].push(toPlayingCard(card));
+      } else if (cardAction === "discard") {
+        room.table.splice(index, 1);
+        room.discard.push(toPlayingCard(card));
+      } else throw new RoomError("Unknown card action.");
+      room.lastAction = `${player.name} adjusted a card on the canvas`;
+      return room;
+    }
+    if (action === "add-token") {
+      const allowedColors: TokenColor[] = ["gold", "coral", "mint", "blue", "ink"];
+      const requestedColor = String(data.color ?? "gold") as TokenColor;
+      const label = cleanName(data.label).slice(0, 12) || "Counter";
+      room.tokens.push({
+        id: crypto.randomUUID(),
+        label,
+        value: Math.max(-99, Math.min(999, Number(data.value) || 1)),
+        color: allowedColors.includes(requestedColor) ? requestedColor : "gold",
+        x: clampPosition(data.x, 50),
+        y: clampPosition(data.y, 54),
+        zIndex: topLayer(room),
+        createdBy: playerId,
+        createdAt: Date.now(),
+      });
+      room.lastAction = `${player.name} added a ${label.toLowerCase()}`;
+      return room;
+    }
+    if (action === "adjust-token") {
+      const token = room.tokens.find((item) => item.id === String(data.tokenId ?? ""));
+      if (!token) throw new RoomError("That counter is no longer on the canvas.", 409);
+      const delta = Math.max(-10, Math.min(10, Number(data.delta) || 0));
+      token.value = Math.max(-99, Math.min(999, token.value + delta));
+      token.zIndex = topLayer(room);
+      room.lastAction = `${player.name} set ${token.label} to ${token.value}`;
+      return room;
+    }
+    if (action === "remove-token") {
+      const index = room.tokens.findIndex((token) => token.id === String(data.tokenId ?? ""));
+      if (index < 0) throw new RoomError("That counter is no longer on the canvas.", 409);
+      const [token] = room.tokens.splice(index, 1);
+      room.lastAction = `${player.name} removed ${token.label}`;
       return room;
     }
     if (action === "set-generals") {
@@ -286,6 +375,7 @@ export async function performAction(code: string, playerId: string, action: stri
       const count = Math.max(1, Math.min(13, Number(data.count) || 5));
       room.deck = shuffle(createDeck(room.game));
       room.table = [];
+      room.tokens = [];
       room.discard = [];
       room.targets = Object.fromEntries(room.players.map((seated) => [seated.id, []]));
       room.activePlayerId = room.players[0]?.id ?? null;
@@ -311,6 +401,7 @@ export async function performAction(code: string, playerId: string, action: stri
       requireHost(room, playerId);
       room.deck = shuffle(createDeck(room.game));
       room.table = [];
+      room.tokens = [];
       room.discard = [];
       room.targets = Object.fromEntries(room.players.map((seated) => [seated.id, []]));
       room.activePlayerId = room.players[0]?.id ?? null;

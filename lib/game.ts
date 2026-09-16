@@ -16,6 +16,25 @@ export type PlayingCard = {
 export type TableCard = PlayingCard & {
   playedBy: string;
   playedAt: number;
+  x: number;
+  y: number;
+  rotation: number;
+  faceDown: boolean;
+  zIndex: number;
+};
+
+export type TokenColor = "gold" | "coral" | "mint" | "blue" | "ink";
+
+export type TableToken = {
+  id: string;
+  label: string;
+  value: number;
+  color: TokenColor;
+  x: number;
+  y: number;
+  zIndex: number;
+  createdBy: string;
+  createdAt: number;
 };
 
 export type Player = {
@@ -59,6 +78,7 @@ export type RoomState = {
   hands: Record<string, PlayingCard[]>;
   deck: PlayingCard[];
   table: TableCard[];
+  tokens: TableToken[];
   discard: PlayingCard[];
   boards: Record<string, PlayerBoard>;
   activePlayerId: string | null;
@@ -92,6 +112,8 @@ export function createPlayerBoard(): PlayerBoard {
 }
 
 export function normalizeRoomState(state: RoomState): RoomState {
+  state.table ??= [];
+  state.tokens ??= [];
   state.discard ??= [];
   state.boards ??= {};
   state.targets ??= {};
@@ -105,6 +127,13 @@ export function normalizeRoomState(state: RoomState): RoomState {
     state.hands[player.id] ??= [];
     state.boards[player.id] ??= createPlayerBoard();
     state.targets[player.id] ??= [];
+  }
+  for (const [index, card] of state.table.entries()) {
+    card.x ??= 50 + ((index % 5) - 2) * 6;
+    card.y ??= 50 + (Math.floor(index / 5) % 3) * 8;
+    card.rotation ??= ((index % 5) - 2) * 4;
+    card.faceDown ??= false;
+    card.zIndex ??= index + 1;
   }
   return state;
 }
@@ -142,6 +171,7 @@ export function publicRoom(state: RoomState, viewerId: string): PublicRoom {
     players: state.players,
     deckCount: state.deck.length,
     table: state.table,
+    tokens: state.tokens,
     discard: state.discard,
     boards: Object.fromEntries(state.players.map((player) => {
       const board = state.boards[player.id];
