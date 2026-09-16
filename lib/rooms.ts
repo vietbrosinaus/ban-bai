@@ -1,7 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 
 import { cleanName, createDeck, createPlayerBoard, GameMode, normalizeRoomState, playerColors, PlayingCard, publicRoom, RoomState, seatJoinOrder, shuffle, TableCard, TokenColor } from "@/lib/game";
-import { tamQuocSatGeneralById } from "@/lib/tam-quoc-sat-generals";
+import { tamQuocSatGenerals } from "@/lib/tam-quoc-sat-generals";
 
 type RoomRow = { state: RoomState | string; version: number };
 
@@ -372,14 +372,19 @@ export async function performAction(code: string, playerId: string, action: stri
       room.lastAction = `${player.name} removed ${token.label}`;
       return room;
     }
-    if (action === "set-generals") {
+    if (action === "draw-generals") {
       if (room.game !== "tam-quoc-sat") throw new RoomError("Generals are only available in Tam Quốc Sát.");
-      const ids = Array.isArray(data.generalIds) ? data.generalIds.map(String).slice(0, 2) : [];
-      if (ids.length !== 2 || new Set(ids).size !== 2) throw new RoomError("Choose two different generals.");
-      const selected = ids.map((id) => tamQuocSatGeneralById.get(id));
-      if (selected.some((general) => !general)) throw new RoomError("Unknown general.");
-      room.boards[playerId].generals = selected.map((general) => ({ ...general!, revealed: false }));
-      room.lastAction = `${player.name} chose two hidden generals`;
+      const assignedIds = new Set(
+        Object.entries(room.boards).flatMap(([ownerId, board]) =>
+          board.generals.flatMap((general) => general && ownerId !== playerId ? [general.id] : []),
+        ),
+      );
+      const previousIds = new Set(room.boards[playerId].generals.flatMap((general) => general ? [general.id] : []));
+      const freshPool = tamQuocSatGenerals.filter((general) => !assignedIds.has(general.id) && !previousIds.has(general.id));
+      const availablePool = freshPool.length >= 2 ? freshPool : tamQuocSatGenerals.filter((general) => !assignedIds.has(general.id));
+      if (availablePool.length < 2) throw new RoomError("There are not enough general cards left.");
+      room.boards[playerId].generals = shuffle(availablePool).slice(0, 2).map((general) => ({ ...general, revealed: false }));
+      room.lastAction = `${player.name} drew two hidden generals`;
       return room;
     }
     if (action === "toggle-general") {

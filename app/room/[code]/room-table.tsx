@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LanguageToggle, localizeServerText, pileName, useLanguage } from "@/components/language-provider";
 import type { HiddenGeneral, PlayingCard, PublicPlayerBoard, PublicRoom, SelectedGeneral, Suit, TableCard, TablePile, TableToken, TokenColor } from "@/lib/game";
-import { tamQuocSatGenerals } from "@/lib/tam-quoc-sat-generals";
 
 declare global {
   interface Document {
@@ -102,7 +101,6 @@ export default function RoomTable() {
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [tokenLabel, setTokenLabel] = useState("");
   const [tokenColor, setTokenColor] = useState<TokenColor>("gold");
-  const [selectedGeneralIds, setSelectedGeneralIds] = useState<string[]>([]);
   const [canvasSelection, setCanvasSelection] = useState<CanvasSelection | null>(null);
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [localPositions, setLocalPositions] = useState<Record<string, CanvasPosition>>({});
@@ -283,12 +281,11 @@ export default function RoomTable() {
   const syncLabel = t(syncStatus === "live" ? "live" : syncStatus);
 
   function openGeneralPicker() {
-    setSelectedGeneralIds(currentBoard?.generals.filter(isVisibleGeneral).map((general) => general.id) ?? []);
     setGeneralsOpen(true);
   }
 
-  function toggleGeneralChoice(id: string) {
-    setSelectedGeneralIds((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length < 2 ? [...current, id] : [current[1], id]);
+  async function drawGenerals() {
+    if (await sendAction("draw-generals")) toast.success(t("generalsDrawn"));
   }
 
   async function moveSelected(destination: string, targetPlayerId?: string, faceDown = false) {
@@ -589,7 +586,7 @@ export default function RoomTable() {
             <div className="tam-self-board">
               <div className="self-generals">
                 {currentBoard.generals.map((general, index) => <GeneralPortrait key={index} general={general} own onClick={() => general ? void sendAction("toggle-general", { slot: index }) : openGeneralPicker()} />)}
-                <button type="button" className="edit-generals" onClick={openGeneralPicker}>{t("chooseGenerals")}</button>
+                <button type="button" className="edit-generals" onClick={openGeneralPicker}>{t(currentBoard.generals.some(isVisibleGeneral) ? "redrawGenerals" : "chooseGenerals")}</button>
               </div>
               <div className="health-control" aria-label={t("healthControls")}>
                 <Heart />
@@ -639,14 +636,20 @@ export default function RoomTable() {
 
       <Dialog open={generalsOpen} onOpenChange={setGeneralsOpen}>
         <DialogContent className="generals-dialog">
-          <DialogHeader><DialogTitle>{t("chooseTwoGenerals")}</DialogTitle><DialogDescription>{t("generalsDescription")}</DialogDescription></DialogHeader>
-          <div className="general-roster">
-            {tamQuocSatGenerals.map((general) => {
-              const selectedIndex = selectedGeneralIds.indexOf(general.id);
-              return <button type="button" key={general.id} className={`roster-general faction-${general.faction} ${selectedIndex >= 0 ? "is-selected" : ""}`} onClick={() => toggleGeneralChoice(general.id)}><span style={{ backgroundImage: `url("${general.asset}")` }} /><b>{general.name}</b><small>{general.faction.toUpperCase()} · {general.maxHp} {t("hp")}</small>{selectedIndex >= 0 && <i>{selectedIndex + 1}</i>}</button>;
-            })}
+          <DialogHeader><DialogTitle>{t("randomGeneralTitle")}</DialogTitle><DialogDescription>{t("generalsDescription")}</DialogDescription></DialogHeader>
+          <div className="random-general-cards" aria-live="polite">
+            {(currentBoard?.generals ?? [null, null]).map((general, index) => isVisibleGeneral(general) ? (
+              <div key={general.id} className={`random-general-card faction-${general.faction}`}>
+                <span style={{ backgroundImage: `url("${general.asset}")` }} />
+                <b>{general.name}</b>
+                <small>{general.faction.toUpperCase()} · {general.maxHp} {t("hp")}</small>
+              </div>
+            ) : (
+              <div key={index} className="random-general-back" aria-label={t("hiddenGeneral")}><span>將</span><small>{t("hidden")}</small></div>
+            ))}
           </div>
-          <div className="dialog-actions"><span>{t("selectedTwo", { count: selectedGeneralIds.length })}</span><Button onClick={async () => { if (await sendAction("set-generals", { generalIds: selectedGeneralIds })) setGeneralsOpen(false); }} disabled={selectedGeneralIds.length !== 2 || isActing}>{t("useGenerals")}</Button></div>
+          <p className="random-general-note">{t("redrawHint")}</p>
+          <div className="dialog-actions"><Button onClick={() => void drawGenerals()} disabled={isActing}>{pendingAction === "draw-generals" ? <LoaderCircle className="spin" /> : <Shuffle />}{t(currentBoard?.generals.some(isVisibleGeneral) ? "redrawGenerals" : "drawTwoGenerals")}</Button></div>
         </DialogContent>
       </Dialog>
 
