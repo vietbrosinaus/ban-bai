@@ -37,6 +37,19 @@ export type TableToken = {
   createdAt: number;
 };
 
+export type TablePile = {
+  id: string;
+  label: string;
+  cards: TableCard[];
+  faceDown: boolean;
+  x: number;
+  y: number;
+  rotation: number;
+  zIndex: number;
+  createdBy: string;
+  createdAt: number;
+};
+
 export type Player = {
   id: string;
   name: string;
@@ -79,6 +92,7 @@ export type RoomState = {
   deck: PlayingCard[];
   table: TableCard[];
   tokens: TableToken[];
+  piles: TablePile[];
   discard: PlayingCard[];
   boards: Record<string, PlayerBoard>;
   activePlayerId: string | null;
@@ -114,6 +128,7 @@ export function createPlayerBoard(): PlayerBoard {
 export function normalizeRoomState(state: RoomState): RoomState {
   state.table ??= [];
   state.tokens ??= [];
+  state.piles ??= [];
   state.discard ??= [];
   state.boards ??= {};
   state.targets ??= {};
@@ -172,6 +187,7 @@ export function publicRoom(state: RoomState, viewerId: string): PublicRoom {
     deckCount: state.deck.length,
     table: state.table,
     tokens: state.tokens,
+    piles: state.piles,
     discard: state.discard,
     boards: Object.fromEntries(state.players.map((player) => {
       const board = state.boards[player.id];

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { HiddenGeneral, PlayingCard, PublicPlayerBoard, PublicRoom, SelectedGeneral, Suit, TableCard, TableToken, TokenColor } from "@/lib/game";
+import type { HiddenGeneral, PlayingCard, PublicPlayerBoard, PublicRoom, SelectedGeneral, Suit, TableCard, TablePile, TableToken, TokenColor } from "@/lib/game";
 import { tamQuocSatGenerals } from "@/lib/tam-quoc-sat-generals";
 
 declare global {
@@ -36,9 +36,11 @@ function CardFace({ card, className = "", onClick, draggable, disabled, onDragSt
   );
 }
 
-type CanvasSelection = { type: "card" | "token"; id: string };
+type CanvasSelection = { type: "card" | "token" | "pile"; id: string };
 type CanvasPosition = { x: number; y: number };
-type CanvasDrag = CanvasSelection & { pointerId: number; startX: number; startY: number; moved: boolean; rect: DOMRect };
+type CanvasDrag = CanvasSelection & { pointerId: number; startX: number; startY: number; moved: boolean; rect: DOMRect; additive: boolean; groupCards: TableCard[] };
+type Marquee = { pointerId: number; startX: number; startY: number; x: number; y: number };
+type CanvasMenu = CanvasSelection & { x: number; y: number };
 
 function canvasKey(type: CanvasSelection["type"], id: string) {
   return `${type}:${id}`;
@@ -95,7 +97,10 @@ export default function RoomTable() {
   const [tokenColor, setTokenColor] = useState<TokenColor>("gold");
   const [selectedGeneralIds, setSelectedGeneralIds] = useState<string[]>([]);
   const [canvasSelection, setCanvasSelection] = useState<CanvasSelection | null>(null);
+  const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [localPositions, setLocalPositions] = useState<Record<string, CanvasPosition>>({});
+  const [marquee, setMarquee] = useState<Marquee | null>(null);
+  const [canvasMenu, setCanvasMenu] = useState<CanvasMenu | null>(null);
   const revisionRef = useRef(0);
   const actionLockRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -108,6 +113,20 @@ export default function RoomTable() {
     setFatalError("");
     setSyncStatus("live");
   }, []);
+
+  useEffect(() => {
+    if (!canvasMenu) return;
+    const close = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".canvas-context-menu")) setCanvasMenu(null);
+    };
+    const closeWithKey = (event: KeyboardEvent) => { if (event.key === "Escape") setCanvasMenu(null); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", closeWithKey);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", closeWithKey);
+    };
+  }, [canvasMenu]);
 
   const refresh = useCallback(async (id: string, quiet = false, sinceRevision?: number, signal?: AbortSignal) => {
     try {
@@ -247,8 +266,11 @@ export default function RoomTable() {
   const isTamQuocSat = room?.game === "tam-quoc-sat";
   const currentBoard = room?.boards[playerId];
   const selectedCard = room?.hand.find((card) => card.id === selectedCardId);
-  const selectedTableCard = canvasSelection?.type === "card" ? room?.table.find((card) => card.id === canvasSelection.id) : undefined;
+  const selectedTableCards = room?.table.filter((card) => selectedCardIds.includes(card.id)) ?? [];
+  const selectedTableCard = selectedTableCards[0];
   const selectedToken = canvasSelection?.type === "token" ? room?.tokens.find((token) => token.id === canvasSelection.id) : undefined;
+  const selectedPile = canvasSelection?.type === "pile" ? room?.piles.find((pile) => pile.id === canvasSelection.id) : undefined;
+  const contextPile = canvasMenu?.type === "pile" ? room?.piles.find((pile) => pile.id === canvasMenu.id) : undefined;
   const myTargets = room?.targets[playerId] ?? [];
   const isActing = pendingAction !== null;
   const syncLabel = syncStatus === "live" ? "Live" : syncStatus === "offline" ? "Offline" : syncStatus === "reconnecting" ? "Reconnecting" : "Connecting";
@@ -270,10 +292,11 @@ export default function RoomTable() {
 
   function startCanvasDrag(event: React.PointerEvent<HTMLDivElement>, selection: CanvasSelection) {
     if (event.button !== 0 || !canvasRef.current) return;
-    const item = selection.type === "card" ? room?.table.find((card) => card.id === selection.id) : room?.tokens.find((token) => token.id === selection.id);
+    const item = selection.type === "card" ? room?.table.find((card) => card.id === selection.id) : selection.type === "pile" ? room?.piles.find((pile) => pile.id === selection.id) : room?.tokens.find((token) => token.id === selection.id);
     if (!item) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { ...selection, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false, rect: canvasRef.current.getBoundingClientRect() };
+    const groupCards = selection.type === "card" && selectedCardIds.includes(selection.id) ? room?.table.filter((card) => selectedCardIds.includes(card.id)) ?? [] : selection.type === "card" ? [item as TableCard] : [];
+    dragRef.current = { ...selection, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false, rect: canvasRef.current.getBoundingClientRect(), additive: event.shiftKey, groupCards };
   }
 
   function moveCanvasDrag(event: React.PointerEvent<HTMLDivElement>) {
@@ -284,46 +307,130 @@ export default function RoomTable() {
     event.preventDefault();
     const x = Math.max(4, Math.min(96, ((event.clientX - drag.rect.left) / drag.rect.width) * 100));
     const y = Math.max(4, Math.min(96, ((event.clientY - drag.rect.top) / drag.rect.height) * 100));
-    setLocalPositions((current) => ({ ...current, [canvasKey(drag.type, drag.id)]: { x, y } }));
+    if (drag.type === "card" && drag.groupCards.length > 1) {
+      const anchor = drag.groupCards.find((card) => card.id === drag.id)!;
+      const dx = x - anchor.x;
+      const dy = y - anchor.y;
+      setLocalPositions((current) => ({ ...current, ...Object.fromEntries(drag.groupCards.map((card) => [canvasKey("card", card.id), { x: Math.max(4, Math.min(96, card.x + dx)), y: Math.max(4, Math.min(96, card.y + dy)) }])) }));
+    } else setLocalPositions((current) => ({ ...current, [canvasKey(drag.type, drag.id)]: { x, y } }));
   }
 
   function endCanvasDrag(event: React.PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
-    if (!drag.moved) {
-      suppressCanvasClickRef.current = true;
-      setSelectedCardId(null);
-      setSelectedZone(null);
-      setCanvasSelection((current) => current?.type === drag.type && current.id === drag.id ? null : { type: drag.type, id: drag.id });
-      window.setTimeout(() => { suppressCanvasClickRef.current = false; }, 0);
-      return;
-    }
+    if (!drag.moved) return;
     suppressCanvasClickRef.current = true;
-    window.setTimeout(() => { suppressCanvasClickRef.current = false; }, 0);
+    window.setTimeout(() => { suppressCanvasClickRef.current = false; }, 80);
+    const keys = drag.type === "card" && drag.groupCards.length > 1 ? drag.groupCards.map((card) => canvasKey("card", card.id)) : [canvasKey(drag.type, drag.id)];
     const key = canvasKey(drag.type, drag.id);
-    const position = localPositions[key] ?? {
-      x: Math.max(4, Math.min(96, ((event.clientX - drag.rect.left) / drag.rect.width) * 100)),
-      y: Math.max(4, Math.min(96, ((event.clientY - drag.rect.top) / drag.rect.height) * 100)),
-    };
-    void sendAction("move-table-item", { itemType: drag.type, itemId: drag.id, ...position }).finally(() => {
+    const pointerPosition = { x: Math.max(4, Math.min(96, ((event.clientX - drag.rect.left) / drag.rect.width) * 100)), y: Math.max(4, Math.min(96, ((event.clientY - drag.rect.top) / drag.rect.height) * 100)) };
+    const position = localPositions[key] ?? pointerPosition;
+    const anchor = drag.groupCards.find((card) => card.id === drag.id);
+    const dx = anchor ? pointerPosition.x - anchor.x : 0;
+    const dy = anchor ? pointerPosition.y - anchor.y : 0;
+    const request = drag.type === "card" && drag.groupCards.length > 1
+      ? sendAction("move-table-items", { moves: drag.groupCards.map((card) => ({ id: card.id, x: Math.max(4, Math.min(96, card.x + dx)), y: Math.max(4, Math.min(96, card.y + dy)) })) })
+      : sendAction("move-table-item", { itemType: drag.type, itemId: drag.id, ...position });
+    void request.finally(() => {
       setLocalPositions((current) => {
         const next = { ...current };
-        delete next[key];
+        keys.forEach((itemKey) => delete next[itemKey]);
         return next;
       });
     });
   }
 
-  function selectCanvasItem(selection: CanvasSelection) {
+  function selectCanvasItem(selection: CanvasSelection, additive = false) {
     if (suppressCanvasClickRef.current) return;
     setSelectedCardId(null);
     setSelectedZone(null);
-    setCanvasSelection((current) => current?.type === selection.type && current.id === selection.id ? null : selection);
+    setCanvasMenu(null);
+    if (selection.type === "card") {
+      setSelectedCardIds((current) => additive ? current.includes(selection.id) ? current.filter((id) => id !== selection.id) : [...current, selection.id] : [selection.id]);
+      setCanvasSelection(selection);
+    } else {
+      setSelectedCardIds([]);
+      setCanvasSelection((current) => current?.type === selection.type && current.id === selection.id ? null : selection);
+    }
   }
 
-  function nudgeCanvasItem(item: TableCard | TableToken, dx: number, dy: number, type: CanvasSelection["type"]) {
+  function nudgeCanvasItem(item: TableToken | TablePile, dx: number, dy: number, type: "token" | "pile") {
     void sendAction("move-table-item", { itemType: type, itemId: item.id, x: item.x + dx, y: item.y + dy });
+  }
+
+  function nudgeSelectedCards(dx: number, dy: number) {
+    void sendAction("move-table-items", { moves: selectedTableCards.map((card) => ({ id: card.id, x: card.x + dx, y: card.y + dy })) });
+  }
+
+  function startMarquee(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || event.target !== event.currentTarget) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setCanvasMenu(null);
+    if (!event.shiftKey) { setSelectedCardIds([]); setCanvasSelection(null); }
+    setMarquee({ pointerId: event.pointerId, startX: x, startY: y, x, y });
+  }
+
+  function moveMarquee(event: React.PointerEvent<HTMLDivElement>) {
+    const pointerId = event.pointerId;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((event.clientY - rect.top) / rect.height) * 100));
+    setMarquee((current) => {
+      if (!current || current.pointerId !== pointerId) return current;
+      return { ...current, x, y };
+    });
+  }
+
+  function endMarquee(event: React.PointerEvent<HTMLDivElement>) {
+    if (!marquee || marquee.pointerId !== event.pointerId) return;
+    const left = Math.min(marquee.startX, marquee.x);
+    const right = Math.max(marquee.startX, marquee.x);
+    const top = Math.min(marquee.startY, marquee.y);
+    const bottom = Math.max(marquee.startY, marquee.y);
+    if (right - left > 1 || bottom - top > 1) {
+      const ids = room?.table.filter((card) => card.x >= left && card.x <= right && card.y >= top && card.y <= bottom).map((card) => card.id) ?? [];
+      setSelectedCardIds((current) => event.shiftKey ? [...new Set([...current, ...ids])] : ids);
+      if (ids.length) setCanvasSelection({ type: "card", id: ids[0] });
+    }
+    setMarquee(null);
+  }
+
+  function openCanvasMenu(event: React.MouseEvent, selection: CanvasSelection) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (selection.type === "card" && !selectedCardIds.includes(selection.id)) {
+      setSelectedCardIds([selection.id]);
+      setCanvasSelection(selection);
+    } else if (selection.type !== "card") setCanvasSelection(selection);
+    setCanvasMenu({ ...selection, x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 330) });
+  }
+
+  async function runCardAction(cardAction: string) {
+    if (!selectedCardIds.length) return;
+    if (await sendAction("table-card-action", { cardIds: selectedCardIds, cardAction })) {
+      if (cardAction === "hand" || cardAction === "discard") { setSelectedCardIds([]); setCanvasSelection(null); }
+      setCanvasMenu(null);
+    }
+  }
+
+  async function makeSelectedPile() {
+    if (selectedCardIds.length < 2) return;
+    if (await sendAction("make-pile", { cardIds: selectedCardIds, faceDown: true })) {
+      setSelectedCardIds([]);
+      setCanvasSelection(null);
+      setCanvasMenu(null);
+    }
+  }
+
+  async function runPileAction(pile: TablePile, pileAction: string, extra: Record<string, unknown> = {}) {
+    if (await sendAction("pile-action", { pileId: pile.id, pileAction, ...extra })) {
+      if (pileAction === "spread" || pileAction === "discard" || (pileAction === "draw" && pile.cards.length === 1)) setCanvasSelection(null);
+      setCanvasMenu(null);
+    }
   }
 
   function dropCardOnCanvas(event: React.DragEvent<HTMLDivElement>) {
@@ -379,8 +486,8 @@ export default function RoomTable() {
           {room && room.players.length === 1 && <div className="invite-seat-hint"><Users /><span>Share the link to fill the circle</span></div>}
         </div>
 
-        <div className="canvas-surface" ref={canvasRef} aria-label="Shared freeform tabletop canvas" onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { const nextTarget = event.relatedTarget; if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) setDragOver(false); }} onDrop={dropCardOnCanvas} onClick={(event) => { if (event.target === event.currentTarget) setCanvasSelection(null); }}>
-          <div className="canvas-caption"><Move /><span>Shared canvas</span><small>Drag anything · no rules enforced</small></div>
+        <div className="canvas-surface" ref={canvasRef} aria-label="Shared freeform tabletop canvas" onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { const nextTarget = event.relatedTarget; if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) setDragOver(false); }} onDrop={dropCardOnCanvas} onPointerDown={startMarquee} onPointerMove={moveMarquee} onPointerUp={endMarquee} onPointerCancel={() => setMarquee(null)} onContextMenu={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }}>
+          <div className="canvas-caption"><Move /><span>Shared canvas</span><small>Drag to select · Shift-click to add · Right-click for actions</small></div>
           <div className="deck-area canvas-deck">
             <button type="button" className={`card-deck ${room?.game === "tam-quoc-sat" ? "tam-quoc-deck" : ""} ${pendingAction === "draw" ? "is-pending" : ""}`} onClick={() => void sendAction("draw")} disabled={isActing || !room?.deckCount} aria-label={`Draw from deck, ${room?.deckCount ?? 0} cards remaining`}><span>{room?.game === "tam-quoc-sat" ? "殺" : "BB"}</span><b>{pendingAction === "draw" ? <LoaderCircle className="sync-spinner" /> : room?.deckCount ?? 0}</b></button>
             <span>Tap deck to draw</span>
@@ -388,15 +495,26 @@ export default function RoomTable() {
           </div>
           {room?.table.map((card) => {
             const position = localPositions[canvasKey("card", card.id)] ?? card;
-            const selected = canvasSelection?.type === "card" && canvasSelection.id === card.id;
-            return <div key={`${card.id}-${card.playedAt}`} className={`canvas-item canvas-card-item ${selected ? "is-selected" : ""}`} style={{ left: `${position.x}%`, top: `${position.y}%`, zIndex: card.zIndex, "--card-rotation": `${card.rotation}deg` } as React.CSSProperties} onPointerDown={(event) => startCanvasDrag(event, { type: "card", id: card.id })} onPointerMove={moveCanvasDrag} onPointerUp={endCanvasDrag} onPointerCancel={endCanvasDrag}><CardFace card={card} faceDown={card.faceDown} className="canvas-card" onClick={() => selectCanvasItem({ type: "card", id: card.id })} /></div>;
+            const selected = selectedCardIds.includes(card.id);
+            return <div key={`${card.id}-${card.playedAt}`} className={`canvas-item canvas-card-item ${selected ? "is-selected" : ""}`} style={{ left: `${position.x}%`, top: `${position.y}%`, zIndex: card.zIndex, "--card-rotation": `${card.rotation}deg` } as React.CSSProperties} onPointerDown={(event) => startCanvasDrag(event, { type: "card", id: card.id })} onPointerMove={moveCanvasDrag} onPointerUp={endCanvasDrag} onPointerCancel={endCanvasDrag} onClick={(event) => selectCanvasItem({ type: "card", id: card.id }, event.shiftKey)} onContextMenu={(event) => openCanvasMenu(event, { type: "card", id: card.id })} onDoubleClick={() => void runCardAction("flip")}><CardFace card={card} faceDown={card.faceDown} className="canvas-card" /></div>;
+          })}
+          {room?.piles.map((pile) => {
+            const position = localPositions[canvasKey("pile", pile.id)] ?? pile;
+            const topCard = pile.cards.at(-1);
+            const selected = canvasSelection?.type === "pile" && canvasSelection.id === pile.id;
+            return <div key={pile.id} className={`canvas-item canvas-pile ${selected ? "is-selected" : ""}`} style={{ left: `${position.x}%`, top: `${position.y}%`, zIndex: pile.zIndex, "--card-rotation": `${pile.rotation}deg` } as React.CSSProperties} onPointerDown={(event) => startCanvasDrag(event, { type: "pile", id: pile.id })} onPointerMove={moveCanvasDrag} onPointerUp={endCanvasDrag} onPointerCancel={endCanvasDrag} onClick={() => selectCanvasItem({ type: "pile", id: pile.id })} onContextMenu={(event) => openCanvasMenu(event, { type: "pile", id: pile.id })} onDoubleClick={() => void runPileAction(pile, "draw")}>
+              <span className="pile-layer pile-layer-two" /><span className="pile-layer pile-layer-one" />
+              {topCard && <CardFace card={topCard} faceDown={pile.faceDown} className="canvas-card" />}
+              <span className="pile-count">{pile.cards.length}</span><span className="pile-label">{pile.label}</span>
+            </div>;
           })}
           {room?.tokens.map((token) => {
             const position = localPositions[canvasKey("token", token.id)] ?? token;
             const selected = canvasSelection?.type === "token" && canvasSelection.id === token.id;
-            return <div key={token.id} className={`canvas-item canvas-token token-${token.color} ${selected ? "is-selected" : ""}`} style={{ left: `${position.x}%`, top: `${position.y}%`, zIndex: token.zIndex }} onPointerDown={(event) => startCanvasDrag(event, { type: "token", id: token.id })} onPointerMove={moveCanvasDrag} onPointerUp={endCanvasDrag} onPointerCancel={endCanvasDrag}><button type="button" onClick={() => selectCanvasItem({ type: "token", id: token.id })} aria-label={`${token.label}, value ${token.value}`}><b>{token.value}</b><span>{token.label}</span></button></div>;
+            return <div key={token.id} className={`canvas-item canvas-token token-${token.color} ${selected ? "is-selected" : ""}`} style={{ left: `${position.x}%`, top: `${position.y}%`, zIndex: token.zIndex }} onPointerDown={(event) => startCanvasDrag(event, { type: "token", id: token.id })} onPointerMove={moveCanvasDrag} onPointerUp={endCanvasDrag} onPointerCancel={endCanvasDrag} onClick={() => selectCanvasItem({ type: "token", id: token.id })}><button type="button" aria-label={`${token.label}, value ${token.value}`}><b>{token.value}</b><span>{token.label}</span></button></div>;
           })}
-          {room && room.table.length === 0 && room.tokens.length === 0 && <div className="canvas-empty"><Hand /><b>{dragOver ? "Drop it anywhere" : "Your table, your rules"}</b><span>Play a card or add a counter, then drag it anywhere.</span></div>}
+          {marquee && <div className="selection-marquee" style={{ left: `${Math.min(marquee.startX, marquee.x)}%`, top: `${Math.min(marquee.startY, marquee.y)}%`, width: `${Math.abs(marquee.x - marquee.startX)}%`, height: `${Math.abs(marquee.y - marquee.startY)}%` }} />}
+          {room && room.table.length === 0 && room.tokens.length === 0 && room.piles.length === 0 && <div className="canvas-empty"><Hand /><b>{dragOver ? "Drop it anywhere" : "Your table, your rules"}</b><span>Play cards, build piles, and add counters for any game.</span></div>}
         </div>
 
         <aside className="table-controls">
@@ -410,25 +528,33 @@ export default function RoomTable() {
           </div>
           <Button variant="outline" disabled={isActing} onClick={() => setTokenDialogOpen(true)}><CircleDot /> Add counter</Button>
           <Button variant="outline" disabled={!room?.isHost || isActing} onClick={() => void sendAction("shuffle")}><Shuffle className={pendingAction === "shuffle" ? "sync-spinner" : ""} /> Shuffle deck</Button>
-          <Button variant="outline" disabled={isActing || (!room?.table.length && !room?.tokens.length)} onClick={() => void sendAction("clear-table")}><Trash2 className={pendingAction === "clear-table" ? "sync-spinner" : ""} /> Clear canvas</Button>
+          <Button variant="outline" disabled={isActing || (!room?.table.length && !room?.tokens.length && !room?.piles.length)} onClick={() => void sendAction("clear-table")}><Trash2 className={pendingAction === "clear-table" ? "sync-spinner" : ""} /> Clear canvas</Button>
           <Button variant="ghost" disabled={!room?.isHost || isActing} onClick={() => void sendAction("reset")}><RefreshCw className={pendingAction === "reset" ? "sync-spinner" : ""} /> Reset table</Button>
         </aside>
 
-        {(selectedTableCard || selectedToken) && <div className="canvas-action-bar" role="toolbar" aria-label={selectedTableCard ? "Selected card controls" : "Selected counter controls"}>
-          <span className="canvas-selection-name"><b>{selectedTableCard ? (selectedTableCard.faceDown ? "Face-down card" : selectedTableCard.name ?? `${selectedTableCard.rank}${suitSymbol[selectedTableCard.suit]}`) : selectedToken?.label}</b><small>Tap arrows or drag to move</small></span>
+        {(selectedTableCard || selectedToken || selectedPile) && <div className="canvas-action-bar" role="toolbar" aria-label={selectedTableCard ? "Selected card controls" : selectedPile ? "Selected pile controls" : "Selected counter controls"}>
+          <span className="canvas-selection-name"><b>{selectedTableCards.length > 1 ? `${selectedTableCards.length} cards selected` : selectedTableCard ? (selectedTableCard.faceDown ? "Face-down card" : selectedTableCard.name ?? `${selectedTableCard.rank}${suitSymbol[selectedTableCard.suit]}`) : selectedPile ? `${selectedPile.label} · ${selectedPile.cards.length}` : selectedToken?.label}</b><small>{selectedTableCards.length > 1 ? "Drag together or make a pile" : selectedPile ? "Double-click to draw" : "Tap arrows or drag to move"}</small></span>
           <div className="canvas-nudges" aria-label="Move selected item">
-            <Button size="icon-sm" variant="ghost" aria-label="Move left" disabled={isActing} onClick={() => { const item = selectedTableCard ?? selectedToken; if (item) nudgeCanvasItem(item, -5, 0, selectedTableCard ? "card" : "token"); }}><ArrowLeft /></Button>
-            <Button size="icon-sm" variant="ghost" aria-label="Move up" disabled={isActing} onClick={() => { const item = selectedTableCard ?? selectedToken; if (item) nudgeCanvasItem(item, 0, -5, selectedTableCard ? "card" : "token"); }}><ArrowUp /></Button>
-            <Button size="icon-sm" variant="ghost" aria-label="Move down" disabled={isActing} onClick={() => { const item = selectedTableCard ?? selectedToken; if (item) nudgeCanvasItem(item, 0, 5, selectedTableCard ? "card" : "token"); }}><ArrowDown /></Button>
-            <Button size="icon-sm" variant="ghost" aria-label="Move right" disabled={isActing} onClick={() => { const item = selectedTableCard ?? selectedToken; if (item) nudgeCanvasItem(item, 5, 0, selectedTableCard ? "card" : "token"); }}><ArrowRight /></Button>
+            <Button size="icon-sm" variant="ghost" aria-label="Move left" disabled={isActing} onClick={() => selectedTableCard ? nudgeSelectedCards(-5, 0) : selectedPile ? nudgeCanvasItem(selectedPile, -5, 0, "pile") : selectedToken && nudgeCanvasItem(selectedToken, -5, 0, "token")}><ArrowLeft /></Button>
+            <Button size="icon-sm" variant="ghost" aria-label="Move up" disabled={isActing} onClick={() => selectedTableCard ? nudgeSelectedCards(0, -5) : selectedPile ? nudgeCanvasItem(selectedPile, 0, -5, "pile") : selectedToken && nudgeCanvasItem(selectedToken, 0, -5, "token")}><ArrowUp /></Button>
+            <Button size="icon-sm" variant="ghost" aria-label="Move down" disabled={isActing} onClick={() => selectedTableCard ? nudgeSelectedCards(0, 5) : selectedPile ? nudgeCanvasItem(selectedPile, 0, 5, "pile") : selectedToken && nudgeCanvasItem(selectedToken, 0, 5, "token")}><ArrowDown /></Button>
+            <Button size="icon-sm" variant="ghost" aria-label="Move right" disabled={isActing} onClick={() => selectedTableCard ? nudgeSelectedCards(5, 0) : selectedPile ? nudgeCanvasItem(selectedPile, 5, 0, "pile") : selectedToken && nudgeCanvasItem(selectedToken, 5, 0, "token")}><ArrowRight /></Button>
           </div>
           {selectedTableCard && <>
-            <Button size="sm" variant="outline" disabled={isActing} onClick={() => void sendAction("table-card-action", { cardId: selectedTableCard.id, cardAction: "flip" })}><FlipHorizontal2 /> Flip</Button>
-            <Button size="icon-sm" variant="outline" aria-label="Rotate card left" disabled={isActing} onClick={() => void sendAction("table-card-action", { cardId: selectedTableCard.id, cardAction: "rotate-left" })}><RotateCcw /></Button>
-            <Button size="icon-sm" variant="outline" aria-label="Rotate card right" disabled={isActing} onClick={() => void sendAction("table-card-action", { cardId: selectedTableCard.id, cardAction: "rotate-right" })}><RotateCw /></Button>
-            <Button size="sm" variant="outline" disabled={isActing} onClick={() => void sendAction("table-card-action", { cardId: selectedTableCard.id, cardAction: "front" })}><Layers3 /> Front</Button>
-            <Button size="sm" variant="outline" disabled={isActing} onClick={async () => { if (await sendAction("table-card-action", { cardId: selectedTableCard.id, cardAction: "hand" })) setCanvasSelection(null); }}><Hand /> To hand</Button>
-            <Button size="icon-sm" variant="ghost" aria-label="Discard selected card" disabled={isActing} onClick={async () => { if (await sendAction("table-card-action", { cardId: selectedTableCard.id, cardAction: "discard" })) setCanvasSelection(null); }}><Trash2 /></Button>
+            {selectedTableCards.length > 1 && <Button size="sm" disabled={isActing} onClick={() => void makeSelectedPile()}><Layers3 /> Make pile</Button>}
+            <Button size="sm" variant="outline" disabled={isActing} onClick={() => void runCardAction("flip")}><FlipHorizontal2 /> Flip</Button>
+            <Button size="icon-sm" variant="outline" aria-label="Rotate selected cards left" disabled={isActing} onClick={() => void runCardAction("rotate-left")}><RotateCcw /></Button>
+            <Button size="icon-sm" variant="outline" aria-label="Rotate selected cards right" disabled={isActing} onClick={() => void runCardAction("rotate-right")}><RotateCw /></Button>
+            <Button size="sm" variant="outline" disabled={isActing} onClick={() => void runCardAction("front")}><Layers3 /> Front</Button>
+            <Button size="sm" variant="outline" disabled={isActing} onClick={() => void runCardAction("hand")}><Hand /> To hand</Button>
+            <Button size="icon-sm" variant="ghost" aria-label="Discard selected cards" disabled={isActing} onClick={() => void runCardAction("discard")}><Trash2 /></Button>
+          </>}
+          {selectedPile && <>
+            <Button size="sm" disabled={isActing} onClick={() => void runPileAction(selectedPile, "draw")}><Hand /> Draw</Button>
+            <Button size="sm" variant="outline" disabled={isActing} onClick={() => void runPileAction(selectedPile, "shuffle")}><Shuffle /> Shuffle</Button>
+            <Button size="sm" variant="outline" disabled={isActing} onClick={() => void runPileAction(selectedPile, "flip")}><FlipHorizontal2 /> Flip</Button>
+            <Button size="sm" variant="outline" disabled={isActing} onClick={() => void runPileAction(selectedPile, "spread")}><Sparkles /> Spread</Button>
+            <Button size="icon-sm" variant="ghost" aria-label="Discard entire pile" disabled={isActing} onClick={() => void runPileAction(selectedPile, "discard")}><Trash2 /></Button>
           </>}
           {selectedToken && <>
             <Button size="icon-sm" variant="outline" aria-label="Decrease counter" disabled={isActing} onClick={() => void sendAction("adjust-token", { tokenId: selectedToken.id, delta: -1 })}><Minus /></Button>
@@ -436,7 +562,12 @@ export default function RoomTable() {
             <Button size="icon-sm" variant="outline" aria-label="Increase counter" disabled={isActing} onClick={() => void sendAction("adjust-token", { tokenId: selectedToken.id, delta: 1 })}><Plus /></Button>
             <Button size="icon-sm" variant="ghost" aria-label="Remove counter" disabled={isActing} onClick={async () => { if (await sendAction("remove-token", { tokenId: selectedToken.id })) setCanvasSelection(null); }}><Trash2 /></Button>
           </>}
-          <Button size="icon-sm" variant="ghost" aria-label="Close canvas controls" onClick={() => setCanvasSelection(null)}><Undo2 /></Button>
+          <Button size="icon-sm" variant="ghost" aria-label="Close canvas controls" onClick={() => { setCanvasSelection(null); setSelectedCardIds([]); }}><Undo2 /></Button>
+        </div>}
+
+        {canvasMenu && <div className="canvas-context-menu" style={{ left: canvasMenu.x, top: canvasMenu.y }} role="menu" aria-label={canvasMenu.type === "pile" ? "Pile actions" : "Card actions"}>
+          {canvasMenu.type === "card" && <><b>{selectedCardIds.length > 1 ? `${selectedCardIds.length} selected cards` : "Card actions"}</b>{selectedCardIds.length > 1 && <button type="button" role="menuitem" onClick={() => void makeSelectedPile()}><Layers3 /> Make face-down pile</button>}<button type="button" role="menuitem" onClick={() => void runCardAction("flip")}><FlipHorizontal2 /> Flip</button><button type="button" role="menuitem" onClick={() => void runCardAction("rotate-right")}><RotateCw /> Rotate 15°</button><button type="button" role="menuitem" onClick={() => void runCardAction("front")}><Layers3 /> Bring to front</button><button type="button" role="menuitem" onClick={() => void runCardAction("hand")}><Hand /> Move to my hand</button><button type="button" role="menuitem" onClick={() => void runCardAction("discard")}><Trash2 /> Discard</button></>}
+          {canvasMenu.type === "pile" && contextPile && <><b>{contextPile.label} · {contextPile.cards.length} cards</b><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "draw")}><Hand /> Draw to hand</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "play-top")}><Eye /> Play top face-up</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "shuffle")}><Shuffle /> Shuffle pile</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "flip")}><FlipHorizontal2 /> Flip pile</button>{selectedCardIds.length > 0 && <button type="button" role="menuitem" onClick={async () => { if (await sendAction("add-cards-to-pile", { pileId: contextPile.id, cardIds: selectedCardIds })) { setSelectedCardIds([]); setCanvasMenu(null); } }}><Plus /> Add selected cards</button>}<button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "spread")}><Sparkles /> Spread cards</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "discard")}><Trash2 /> Discard pile</button></>}
         </div>}
 
         <div className="activity-line" aria-live="polite"><span className={`status-pulse ${syncStatus !== "live" ? "status-muted" : ""}`} /> {pendingAction ? "Updating the table…" : room?.lastAction ?? "Loading the table…"}</div>

@@ -39,7 +39,7 @@ function clampPosition(value: unknown, fallback: number) {
 }
 
 function topLayer(room: RoomState) {
-  return Math.max(0, ...room.table.map((card) => card.zIndex), ...room.tokens.map((token) => token.zIndex)) + 1;
+  return Math.max(0, ...room.table.map((card) => card.zIndex), ...room.tokens.map((token) => token.zIndex), ...room.piles.map((pile) => pile.zIndex)) + 1;
 }
 
 function tableCard(room: RoomState, card: PlayingCard, playerId: string, data: Record<string, unknown> = {}): TableCard {
@@ -91,6 +91,7 @@ export async function createRoom(nameValue: unknown, gameValue?: unknown) {
       deck: shuffle(createDeck(game)),
       table: [],
       tokens: [],
+      piles: [],
       discard: [],
       boards: { [playerId]: createPlayerBoard() },
       activePlayerId: playerId,
@@ -232,17 +233,19 @@ export async function performAction(code: string, playerId: string, action: stri
       return room;
     }
     if (action === "clear-table") {
-      if (!room.table.length && !room.tokens.length) throw new RoomError("The canvas is already empty.", 409);
+      if (!room.table.length && !room.tokens.length && !room.piles.length) throw new RoomError("The canvas is already empty.", 409);
       room.discard.push(...room.table.map(toPlayingCard));
+      room.discard.push(...room.piles.flatMap((pile) => pile.cards.map(toPlayingCard)));
       room.table = [];
       room.tokens = [];
+      room.piles = [];
       room.lastAction = `${player.name} cleared the canvas`;
       return room;
     }
     if (action === "move-table-item") {
       const itemType = String(data.itemType ?? "card");
       const itemId = String(data.itemId ?? "");
-      const item = itemType === "token" ? room.tokens.find((token) => token.id === itemId) : room.table.find((card) => card.id === itemId);
+      const item = itemType === "token" ? room.tokens.find((token) => token.id === itemId) : itemType === "pile" ? room.piles.find((pile) => pile.id === itemId) : room.table.find((card) => card.id === itemId);
       if (!item) throw new RoomError("That item is no longer on the canvas.", 409);
       item.x = clampPosition(data.x, item.x);
       item.y = clampPosition(data.y, item.y);
@@ -250,23 +253,89 @@ export async function performAction(code: string, playerId: string, action: stri
       room.lastAction = `${player.name} moved an item`;
       return room;
     }
+    if (action === "move-table-items") {
+      const moves = Array.isArray(data.moves) ? data.moves.slice(0, 100) : [];
+      let moved = 0;
+      for (const move of moves) {
+        if (!move || typeof move !== "object") continue;
+        const values = move as Record<string, unknown>;
+        const card = room.table.find((item) => item.id === String(values.id ?? ""));
+        if (!card) continue;
+        card.x = clampPosition(values.x, card.x);
+        card.y = clampPosition(values.y, card.y);
+        card.zIndex = topLayer(room);
+        moved += 1;
+      }
+      if (!moved) throw new RoomError("Those cards are no longer on the canvas.", 409);
+      room.lastAction = `${player.name} moved ${moved} cards`;
+      return room;
+    }
     if (action === "table-card-action") {
-      const index = room.table.findIndex((card) => card.id === String(data.cardId ?? ""));
-      if (index < 0) throw new RoomError("That card is no longer on the canvas.", 409);
-      const card = room.table[index];
+      const requestedIds = Array.isArray(data.cardIds) ? data.cardIds.map(String) : [String(data.cardId ?? "")];
+      const cardIds = new Set(requestedIds);
+      const cards = room.table.filter((card) => cardIds.has(card.id));
+      if (!cards.length) throw new RoomError("Those cards are no longer on the canvas.", 409);
       const cardAction = String(data.cardAction ?? "");
-      if (cardAction === "flip") card.faceDown = !card.faceDown;
-      else if (cardAction === "rotate-left") card.rotation = ((card.rotation - 15 + 180) % 360 + 360) % 360 - 180;
-      else if (cardAction === "rotate-right") card.rotation = ((card.rotation + 15 + 180) % 360 + 360) % 360 - 180;
-      else if (cardAction === "front") card.zIndex = topLayer(room);
+      if (cardAction === "flip") cards.forEach((card) => { card.faceDown = !card.faceDown; });
+      else if (cardAction === "rotate-left") cards.forEach((card) => { card.rotation = ((card.rotation - 15 + 180) % 360 + 360) % 360 - 180; });
+      else if (cardAction === "rotate-right") cards.forEach((card) => { card.rotation = ((card.rotation + 15 + 180) % 360 + 360) % 360 - 180; });
+      else if (cardAction === "front") cards.forEach((card) => { card.zIndex = topLayer(room); });
       else if (cardAction === "hand") {
-        room.table.splice(index, 1);
-        room.hands[playerId].push(toPlayingCard(card));
+        room.table = room.table.filter((card) => !cardIds.has(card.id));
+        room.hands[playerId].push(...cards.map(toPlayingCard));
       } else if (cardAction === "discard") {
-        room.table.splice(index, 1);
-        room.discard.push(toPlayingCard(card));
+        room.table = room.table.filter((card) => !cardIds.has(card.id));
+        room.discard.push(...cards.map(toPlayingCard));
       } else throw new RoomError("Unknown card action.");
-      room.lastAction = `${player.name} adjusted a card on the canvas`;
+      room.lastAction = `${player.name} adjusted ${cards.length === 1 ? "a card" : `${cards.length} cards`} on the canvas`;
+      return room;
+    }
+    if (action === "make-pile") {
+      const ids = new Set(Array.isArray(data.cardIds) ? data.cardIds.map(String) : []);
+      const cards = room.table.filter((card) => ids.has(card.id)).sort((a, b) => a.zIndex - b.zIndex);
+      if (cards.length < 2) throw new RoomError("Select at least two cards to make a pile.");
+      room.table = room.table.filter((card) => !ids.has(card.id));
+      const centerX = cards.reduce((sum, card) => sum + card.x, 0) / cards.length;
+      const centerY = cards.reduce((sum, card) => sum + card.y, 0) / cards.length;
+      room.piles.push({ id: crypto.randomUUID(), label: cleanName(data.label).slice(0, 18) || "Card pile", cards, faceDown: data.faceDown !== false, x: centerX, y: centerY, rotation: 0, zIndex: topLayer(room), createdBy: playerId, createdAt: Date.now() });
+      room.lastAction = `${player.name} stacked ${cards.length} cards into a pile`;
+      return room;
+    }
+    if (action === "pile-action") {
+      const pileIndex = room.piles.findIndex((pile) => pile.id === String(data.pileId ?? ""));
+      if (pileIndex < 0) throw new RoomError("That pile is no longer on the canvas.", 409);
+      const pile = room.piles[pileIndex];
+      const pileAction = String(data.pileAction ?? "");
+      if (pileAction === "shuffle") pile.cards = shuffle(pile.cards);
+      else if (pileAction === "flip") pile.faceDown = !pile.faceDown;
+      else if (pileAction === "front") pile.zIndex = topLayer(room);
+      else if (pileAction === "draw" || pileAction === "play-top") {
+        const card = pile.cards.pop();
+        if (!card) throw new RoomError("That pile is empty.", 409);
+        if (pileAction === "draw") room.hands[playerId].push(toPlayingCard(card));
+        else room.table.push({ ...card, playedBy: playerId, playedAt: Date.now(), x: clampPosition(data.x, pile.x + 8), y: clampPosition(data.y, pile.y + 4), faceDown: Boolean(data.faceDown), zIndex: topLayer(room) });
+        if (!pile.cards.length) room.piles.splice(pileIndex, 1);
+      } else if (pileAction === "spread") {
+        room.piles.splice(pileIndex, 1);
+        pile.cards.forEach((card, index) => room.table.push({ ...card, x: clampPosition(pile.x + (index - (pile.cards.length - 1) / 2) * 5, pile.x), y: clampPosition(pile.y + (index % 2) * 3, pile.y), rotation: (index - (pile.cards.length - 1) / 2) * 4, faceDown: pile.faceDown, zIndex: topLayer(room) }));
+      } else if (pileAction === "discard") {
+        room.piles.splice(pileIndex, 1);
+        room.discard.push(...pile.cards.map(toPlayingCard));
+      } else throw new RoomError("Unknown pile action.");
+      const pileVerb = pileAction === "draw" ? "drew from" : pileAction === "play-top" ? "played from" : pileAction === "spread" ? "spread" : pileAction === "discard" ? "discarded" : pileAction === "shuffle" ? "shuffled" : pileAction === "flip" ? "flipped" : "moved";
+      room.lastAction = `${player.name} ${pileVerb} ${pile.label}`;
+      return room;
+    }
+    if (action === "add-cards-to-pile") {
+      const pile = room.piles.find((item) => item.id === String(data.pileId ?? ""));
+      if (!pile) throw new RoomError("That pile is no longer on the canvas.", 409);
+      const ids = new Set(Array.isArray(data.cardIds) ? data.cardIds.map(String) : []);
+      const cards = room.table.filter((card) => ids.has(card.id)).sort((a, b) => a.zIndex - b.zIndex);
+      if (!cards.length) throw new RoomError("Select cards to add to the pile.");
+      room.table = room.table.filter((card) => !ids.has(card.id));
+      pile.cards.push(...cards);
+      pile.zIndex = topLayer(room);
+      room.lastAction = `${player.name} added ${cards.length} ${cards.length === 1 ? "card" : "cards"} to ${pile.label}`;
       return room;
     }
     if (action === "add-token") {
@@ -376,6 +445,7 @@ export async function performAction(code: string, playerId: string, action: stri
       room.deck = shuffle(createDeck(room.game));
       room.table = [];
       room.tokens = [];
+      room.piles = [];
       room.discard = [];
       room.targets = Object.fromEntries(room.players.map((seated) => [seated.id, []]));
       room.activePlayerId = room.players[0]?.id ?? null;
@@ -402,6 +472,7 @@ export async function performAction(code: string, playerId: string, action: stri
       room.deck = shuffle(createDeck(room.game));
       room.table = [];
       room.tokens = [];
+      room.piles = [];
       room.discard = [];
       room.targets = Object.fromEntries(room.players.map((seated) => [seated.id, []]));
       room.activePlayerId = room.players[0]?.id ?? null;
