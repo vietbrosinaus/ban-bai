@@ -73,7 +73,7 @@ button, input { font: inherit; }
 
 .lobby-stage { width: min(1420px, 100%); flex: 1; margin: 0 auto; padding: clamp(54px, 8vh, 96px) clamp(22px, 5vw, 72px) 46px; display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(340px, .72fr); align-items: center; gap: clamp(42px, 8vw, 128px); position: relative; }
 .lobby-copy { position: relative; z-index: 2; max-width: 690px; }
-.eyebrow, .panel-kicker { margin: 0 0 14px; color: #d94c2f; font-size: .76rem; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+.eyebrow, .panel-kicker { margin: 0 0 14px; color: #d94c2f; font-family: var(--font-vietnamese), Arial, sans-serif; font-size: .76rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .lobby-copy h1 { margin: 0; max-width: 720px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(3rem, 6vw, 6.3rem); font-weight: 500; line-height: .94; letter-spacing: -.065em; color: #17241f; }
 .lobby-intro { max-width: 590px; margin: 28px 0 0; color: #56635d; font-size: clamp(1rem, 1.4vw, 1.18rem); line-height: 1.65; }
 .game-chips { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 25px; }
