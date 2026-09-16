@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Copy, Layers3, Users } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { toast } from "sonner";
@@ -9,13 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LanguageToggle, localizeServerText, useLanguage } from "@/components/language-provider";
 import type { GameMode } from "@/lib/game";
-
-const previewCards = [
-  { rank: "A", suit: "♠", color: "ink" },
-  { rank: "10", suit: "♥", color: "red" },
-  { rank: "K", suit: "♣", color: "ink" },
-  { rank: "3", suit: "♦", color: "red" },
-];
 
 export default function Lobby() {
   const router = useRouter();
@@ -69,45 +62,20 @@ export default function Lobby() {
           <span className="brand-mark"><span>♠</span><span>♥</span></span>
           <span>Bàn Bài</span>
         </a>
-        <div className="header-tools">
-          <div className="header-status"><span className="status-pulse" /> {t("noAccount")}</div>
-          <LanguageToggle />
-        </div>
+        <LanguageToggle />
       </header>
 
       <section className="lobby-stage">
-        <div className="ambient-card ambient-card-one">♣</div>
-        <div className="ambient-card ambient-card-two">♦</div>
-        <div className="table-preview" aria-hidden="true">
-          <div className="preview-player preview-player-left"><span>MP</span><i /></div>
-          <div className="preview-player preview-player-top"><span>KT</span><i /></div>
-          <div className="preview-player preview-player-right"><span>AN</span><i /></div>
-          <div className="preview-deck"><span>BB</span></div>
-          <div className="preview-cards">
-            {previewCards.map((card, index) => (
-              <div className={`preview-card ${card.color}`} key={`${card.rank}${card.suit}`} style={{ "--card-index": index } as React.CSSProperties}>
-                <b>{card.rank}</b><span>{card.suit}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
         <div className="lobby-copy">
-          <p className="eyebrow">{t("heroEyebrow")}</p>
-          <h1>{t("heroTitle").split("\n").map((line, index) => <span key={line}>{line}{index === 0 && <br />}</span>)}</h1>
+          <div className="hero-suits" aria-hidden="true"><span>♠</span><span>♥</span><span>♣</span><span>♦</span></div>
+          <h1>{t("heroTitle")}</h1>
           <p className="lobby-intro">{t("heroIntro")}</p>
-          <div className="game-chips" aria-label={t("availableGames")}>
-            <span>Tiến Lên</span><span>Tá Lả</span><span>{t("tamLive")}</span><span>{t("customGames")}</span>
-          </div>
         </div>
 
         <div className="entry-panel">
           <div className="entry-heading">
-            <div>
-              <p className="panel-kicker">{t("seatWaiting")}</p>
-              <h2>{t("startPlaying")}</h2>
-            </div>
-            <Layers3 aria-hidden="true" />
+            <h2>{t("startPlaying")}</h2>
+            <p>{t("noAccount")}</p>
           </div>
 
           <form onSubmit={previewCreate} className="entry-form">
@@ -137,18 +105,8 @@ export default function Lobby() {
             <Button type="submit" variant="outline" disabled={!name.trim() || roomCode.length < 4 || busy}>{t("joinRoom")}</Button>
           </form>
 
-          <div className="entry-notes">
-            <span><Users /> {t("players")}</span>
-            <span><Copy /> {t("inviteByLink")}</span>
-          </div>
         </div>
       </section>
-
-      <footer className="site-footer">
-        <span>{t("sandbox52")}</span>
-        <span>{t("privateLinks")}</span>
-        <span>{t("liveTable")}</span>
-      </footer>
     </main>
   );
 }
