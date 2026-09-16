@@ -1,7 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 
-import { cleanName, createDeck, createPlayerBoard, GameMode, normalizeRoomState, playerColors, PlayingCard, publicRoom, RoomState, seatJoinOrder, shuffle, TableCard, TokenColor } from "@/lib/game";
-import { tamQuocSatGenerals } from "@/lib/tam-quoc-sat-generals";
+import { cleanName, createDeck, createGeneralPile, createPlayerBoard, GameMode, normalizeRoomState, playerColors, PlayingCard, publicRoom, RoomState, seatJoinOrder, shuffle, TableCard, TokenColor } from "@/lib/game";
 
 type RoomRow = { state: RoomState | string; version: number };
 
@@ -30,7 +29,11 @@ function newPlayer(id: string, name: string, index: number, occupiedSeats: numbe
 }
 
 function toPlayingCard(card: TableCard): PlayingCard {
-  return { id: card.id, rank: card.rank, suit: card.suit, cardType: card.cardType, name: card.name, asset: card.asset };
+  return { id: card.id, rank: card.rank, suit: card.suit, cardType: card.cardType, name: card.name, asset: card.asset, faction: card.faction, maxHp: card.maxHp };
+}
+
+function initialPiles(game: GameMode, createdBy: string) {
+  return game === "tam-quoc-sat" ? [createGeneralPile(createdBy)] : [];
 }
 
 function clampPosition(value: unknown, fallback: number) {
@@ -91,11 +94,12 @@ export async function createRoom(nameValue: unknown, gameValue?: unknown) {
       deck: shuffle(createDeck(game)),
       table: [],
       tokens: [],
-      piles: [],
+      piles: initialPiles(game, playerId),
       discard: [],
       boards: { [playerId]: createPlayerBoard() },
       activePlayerId: playerId,
       targets: { [playerId]: [] },
+      generalDeckInitialized: true,
       revision: 1,
       updatedAt: now,
       lastAction: `${name} opened the table`,
@@ -372,29 +376,6 @@ export async function performAction(code: string, playerId: string, action: stri
       room.lastAction = `${player.name} removed ${token.label}`;
       return room;
     }
-    if (action === "draw-generals") {
-      if (room.game !== "tam-quoc-sat") throw new RoomError("Generals are only available in Tam Quốc Sát.");
-      const assignedIds = new Set(
-        Object.entries(room.boards).flatMap(([ownerId, board]) =>
-          board.generals.flatMap((general) => general && ownerId !== playerId ? [general.id] : []),
-        ),
-      );
-      const previousIds = new Set(room.boards[playerId].generals.flatMap((general) => general ? [general.id] : []));
-      const freshPool = tamQuocSatGenerals.filter((general) => !assignedIds.has(general.id) && !previousIds.has(general.id));
-      const availablePool = freshPool.length >= 2 ? freshPool : tamQuocSatGenerals.filter((general) => !assignedIds.has(general.id));
-      if (availablePool.length < 2) throw new RoomError("There are not enough general cards left.");
-      room.boards[playerId].generals = shuffle(availablePool).slice(0, 2).map((general) => ({ ...general, revealed: false }));
-      room.lastAction = `${player.name} drew two hidden generals`;
-      return room;
-    }
-    if (action === "toggle-general") {
-      const slot = Number(data.slot);
-      const general = room.boards[playerId].generals[slot];
-      if (!general || (slot !== 0 && slot !== 1)) throw new RoomError("Choose a general card first.");
-      general.revealed = !general.revealed;
-      room.lastAction = `${player.name} ${general.revealed ? "revealed" : "hid"} ${general.name}`;
-      return room;
-    }
     if (action === "adjust-hp" || action === "adjust-max-hp") {
       const board = room.boards[playerId];
       const delta = Math.sign(Number(data.delta) || 0);
@@ -450,7 +431,7 @@ export async function performAction(code: string, playerId: string, action: stri
       room.deck = shuffle(createDeck(room.game));
       room.table = [];
       room.tokens = [];
-      room.piles = [];
+      room.piles = initialPiles(room.game, playerId);
       room.discard = [];
       room.targets = Object.fromEntries(room.players.map((seated) => [seated.id, []]));
       room.activePlayerId = room.players[0]?.id ?? null;
@@ -477,7 +458,7 @@ export async function performAction(code: string, playerId: string, action: stri
       room.deck = shuffle(createDeck(room.game));
       room.table = [];
       room.tokens = [];
-      room.piles = [];
+      room.piles = initialPiles(room.game, playerId);
       room.discard = [];
       room.targets = Object.fromEntries(room.players.map((seated) => [seated.id, []]));
       room.activePlayerId = room.players[0]?.id ?? null;

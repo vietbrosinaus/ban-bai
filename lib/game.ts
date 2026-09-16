@@ -1,5 +1,5 @@
 import { createTamQuocSatDeck } from "@/lib/tam-quoc-sat";
-import type { TamFaction } from "@/lib/tam-quoc-sat-generals";
+import { tamQuocSatGenerals, type TamFaction, type TamGeneral } from "@/lib/tam-quoc-sat-generals";
 
 export type Suit = "spades" | "hearts" | "diamonds" | "clubs";
 export type GameMode = "sandbox-52" | "tam-quoc-sat";
@@ -11,6 +11,8 @@ export type PlayingCard = {
   cardType?: string;
   name?: string;
   asset?: string;
+  faction?: TamFaction;
+  maxHp?: number;
 };
 
 export type TableCard = PlayingCard & {
@@ -97,12 +99,13 @@ export type RoomState = {
   boards: Record<string, PlayerBoard>;
   activePlayerId: string | null;
   targets: Record<string, string[]>;
+  generalDeckInitialized: boolean;
   revision: number;
   updatedAt: number;
   lastAction: string;
 };
 
-export type PublicRoom = Omit<RoomState, "hands" | "hostId" | "deck" | "boards"> & {
+export type PublicRoom = Omit<RoomState, "hands" | "hostId" | "deck" | "boards" | "generalDeckInitialized"> & {
   deckCount: number;
   hand: PlayingCard[];
   handCounts: Record<string, number>;
@@ -120,6 +123,27 @@ export const playerColors = [
 ];
 
 export const seatJoinOrder = [0, 5, 3, 7, 2, 8, 1, 9, 4, 6] as const;
+export const GENERAL_PILE_ID = "tam-quoc-sat-generals";
+
+const factionSuit: Record<TamFaction, Suit> = {
+  wei: "spades",
+  shu: "hearts",
+  wu: "diamonds",
+  qun: "clubs",
+};
+
+export function generalToPlayingCard(general: TamGeneral | SelectedGeneral): PlayingCard {
+  return {
+    id: `general-${general.id}`,
+    rank: String(general.maxHp),
+    suit: factionSuit[general.faction],
+    cardType: "general",
+    name: general.name,
+    asset: general.asset,
+    faction: general.faction,
+    maxHp: general.maxHp,
+  };
+}
 
 export function createPlayerBoard(): PlayerBoard {
   return { hp: 4, maxHp: 4, generals: [null, null], equipment: [], judging: [], chained: false, faceDown: false };
@@ -142,6 +166,27 @@ export function normalizeRoomState(state: RoomState): RoomState {
     state.hands[player.id] ??= [];
     state.boards[player.id] ??= createPlayerBoard();
     state.targets[player.id] ??= [];
+  }
+  if (!state.generalDeckInitialized) {
+    if (state.game === "tam-quoc-sat") {
+      for (const player of state.players) {
+        const board = state.boards[player.id];
+        const migratedGenerals = board.generals.flatMap((general) => general ? [generalToPlayingCard(general)] : []);
+        state.hands[player.id].push(...migratedGenerals);
+        board.generals = [null, null];
+      }
+      const usedGeneralIds = new Set([
+        ...Object.values(state.hands).flat(),
+        ...state.table,
+        ...state.piles.flatMap((pile) => pile.cards),
+        ...state.discard,
+        ...Object.values(state.boards).flatMap((board) => [...board.equipment, ...board.judging]),
+      ].filter((card) => card.cardType === "general").map((card) => card.id));
+      const pile = createGeneralPile("system");
+      pile.cards = pile.cards.filter((card) => !usedGeneralIds.has(card.id));
+      if (pile.cards.length) state.piles.push(pile);
+    }
+    state.generalDeckInitialized = true;
   }
   for (const [index, card] of state.table.entries()) {
     card.x ??= 50 + ((index % 5) - 2) * 6;
@@ -174,6 +219,32 @@ export function shuffle<T>(items: T[]): T[] {
   return next;
 }
 
+export function createGeneralPile(createdBy: string): TablePile {
+  const now = Date.now();
+  const cards = shuffle(tamQuocSatGenerals.map(generalToPlayingCard)).map((card, index) => ({
+    ...card,
+    playedBy: createdBy,
+    playedAt: now,
+    x: 24,
+    y: 50,
+    rotation: 0,
+    faceDown: true,
+    zIndex: index + 1,
+  }));
+  return {
+    id: GENERAL_PILE_ID,
+    label: "Generals",
+    cards,
+    faceDown: true,
+    x: 24,
+    y: 50,
+    rotation: 0,
+    zIndex: 2,
+    createdBy,
+    createdAt: now,
+  };
+}
+
 export function cleanName(value: unknown) {
   return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 24);
 }
@@ -187,7 +258,22 @@ export function publicRoom(state: RoomState, viewerId: string): PublicRoom {
     deckCount: state.deck.length,
     table: state.table,
     tokens: state.tokens,
-    piles: state.piles,
+    piles: state.piles.map((pile) => pile.faceDown ? {
+      ...pile,
+      cards: pile.cards.map((_, index) => ({
+        id: `hidden-${pile.id}-${index}`,
+        rank: "?",
+        suit: "spades" as const,
+        cardType: pile.id === GENERAL_PILE_ID ? "general" : undefined,
+        playedBy: "",
+        playedAt: 0,
+        x: pile.x,
+        y: pile.y,
+        rotation: 0,
+        faceDown: true,
+        zIndex: index,
+      })),
+    } : pile),
     discard: state.discard,
     boards: Object.fromEntries(state.players.map((player) => {
       const board = state.boards[player.id];

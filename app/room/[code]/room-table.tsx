@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LanguageToggle, localizeServerText, pileName, useLanguage } from "@/components/language-provider";
-import type { HiddenGeneral, PlayingCard, PublicPlayerBoard, PublicRoom, SelectedGeneral, Suit, TableCard, TablePile, TableToken, TokenColor } from "@/lib/game";
+import { GENERAL_PILE_ID, type PlayingCard, type PublicPlayerBoard, type PublicRoom, type Suit, type TableCard, type TablePile, type TableToken, type TokenColor } from "@/lib/game";
 import { getTamQuocSatCardInfo } from "@/lib/tam-quoc-sat";
 
 declare global {
@@ -28,14 +28,15 @@ type SyncStatus = "connecting" | "live" | "reconnecting" | "offline";
 
 function CardFace({ card, className = "", onClick, draggable, disabled, onDragStart, style, faceDown = false }: { card: PlayingCard; className?: string; onClick?: () => void; draggable?: boolean; disabled?: boolean; onDragStart?: React.DragEventHandler<HTMLButtonElement>; style?: React.CSSProperties; faceDown?: boolean }) {
   const { language, t } = useLanguage();
+  const isGeneral = card.cardType === "general";
   const red = card.suit === "hearts" || card.suit === "diamonds";
   const cardStyle = card.asset && !faceDown ? { ...style, backgroundImage: `url("${card.asset}")` } : style;
   const suits: Record<Suit, string> = language === "vi" ? { spades: "bích", hearts: "cơ", diamonds: "rô", clubs: "tép" } : { spades: "spades", hearts: "hearts", diamonds: "diamonds", clubs: "clubs" };
   const rankLabel = t("rankOfSuit", { rank: card.rank, suit: suits[card.suit] });
-  const label = faceDown ? t("faceDownCard") : card.name ? `${card.name}, ${rankLabel}` : rankLabel;
+  const label = faceDown ? t(isGeneral ? "generalCardBack" : "faceDownCard") : isGeneral ? t("generalCardLabel", { name: card.name ?? "", faction: card.faction?.toUpperCase() ?? "", hp: card.maxHp ?? card.rank }) : card.name ? `${card.name}, ${rankLabel}` : rankLabel;
   return (
-    <button type="button" className={`playing-card ${red && !faceDown ? "card-red" : ""} ${card.asset && !faceDown ? "art-card" : ""} ${faceDown ? "card-back" : ""} ${className}`} onClick={onClick} draggable={draggable && !disabled} disabled={disabled} onDragStart={onDragStart} style={cardStyle} aria-label={label} title={faceDown ? t("faceDownTitle") : card.name}>
-      {faceDown ? <span className="card-back-mark">BB</span> : <><span className="card-corner"><b>{card.rank}</b><i>{suitSymbol[card.suit]}</i></span><span className="card-suit">{suitSymbol[card.suit]}</span><span className="card-corner card-corner-bottom"><b>{card.rank}</b><i>{suitSymbol[card.suit]}</i></span></>}
+    <button type="button" className={`playing-card ${red && !faceDown && !isGeneral ? "card-red" : ""} ${card.asset && !faceDown ? "art-card" : ""} ${isGeneral ? `general-playing-card faction-${card.faction}` : ""} ${faceDown ? "card-back" : ""} ${className}`} onClick={onClick} draggable={draggable && !disabled} disabled={disabled} onDragStart={onDragStart} style={cardStyle} aria-label={label} title={faceDown ? t(isGeneral ? "generalCardBack" : "faceDownTitle") : card.name}>
+      {faceDown ? <span className="card-back-mark">{isGeneral ? "將" : "BB"}</span> : isGeneral ? <span className="general-card-copy"><b>{card.name}</b><small>{card.faction?.toUpperCase()} · {card.maxHp ?? card.rank} {t("hp")}</small></span> : <><span className="card-corner"><b>{card.rank}</b><i>{suitSymbol[card.suit]}</i></span><span className="card-suit">{suitSymbol[card.suit]}</span><span className="card-corner card-corner-bottom"><b>{card.rank}</b><i>{suitSymbol[card.suit]}</i></span></>}
     </button>
   );
 }
@@ -48,23 +49,6 @@ type CanvasMenu = CanvasSelection & { x: number; y: number };
 
 function canvasKey(type: CanvasSelection["type"], id: string) {
   return `${type}:${id}`;
-}
-
-function isVisibleGeneral(general: SelectedGeneral | HiddenGeneral | null): general is SelectedGeneral {
-  return Boolean(general && !("hidden" in general));
-}
-
-function GeneralPortrait({ general, own, onClick }: { general: SelectedGeneral | HiddenGeneral | null; own?: boolean; onClick?: () => void }) {
-  const { t } = useLanguage();
-  if (!general) return <button type="button" className="general-slot general-empty" onClick={onClick}><Plus /><span>{t("choose")}</span></button>;
-  if (!isVisibleGeneral(general)) return <div className="general-slot general-hidden"><span>將</span><small>{t("hidden")}</small></div>;
-  return (
-    <button type="button" className={`general-slot faction-${general.faction} ${general.revealed ? "is-revealed" : "is-hidden"}`} onClick={onClick} disabled={!own} title={own ? `${general.revealed ? t("hide") : t("reveal")} ${general.name}` : general.name}>
-      <span className="general-art" style={{ backgroundImage: `url("${general.asset}")` }} />
-      <b>{general.name}</b>
-      {own && <i>{general.revealed ? <Eye /> : <EyeOff />}</i>}
-    </button>
-  );
 }
 
 function BoardZones({ board, own, onZoneCard }: { board: PublicPlayerBoard; own?: boolean; onZoneCard?: (source: "equipment" | "judging", card: PlayingCard) => void }) {
@@ -98,7 +82,6 @@ export default function RoomTable() {
   const [inspectedCard, setInspectedCard] = useState<PlayingCard | null>(null);
   const [selectedZone, setSelectedZone] = useState<{ source: "equipment" | "judging"; card: PlayingCard } | null>(null);
   const [giveTargetId, setGiveTargetId] = useState("");
-  const [generalsOpen, setGeneralsOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [tokenLabel, setTokenLabel] = useState("");
@@ -283,14 +266,6 @@ export default function RoomTable() {
   const myTargets = room?.targets[playerId] ?? [];
   const isActing = pendingAction !== null;
   const syncLabel = t(syncStatus === "live" ? "live" : syncStatus);
-
-  function openGeneralPicker() {
-    setGeneralsOpen(true);
-  }
-
-  async function drawGenerals() {
-    if (await sendAction("draw-generals")) toast.success(t("generalsDrawn"));
-  }
 
   async function moveSelected(destination: string, targetPlayerId?: string, faceDown = false) {
     if (!selectedCardId) return;
@@ -483,7 +458,6 @@ export default function RoomTable() {
                   {targeted && <Crosshair className="target-mark" />}
                 </button>
                 {isTamQuocSat && board && <div className="seat-details">
-                  <div className="seat-generals">{board.generals.map((general, index) => isVisibleGeneral(general) ? <span key={index} className={`faction-${general.faction}`} style={{ backgroundImage: `url("${general.asset}")` }} title={general.name} /> : <span key={index} className="seat-general-hidden" title={general ? t("hiddenGeneral") : t("noGeneral")}>將</span>)}</div>
                   <div className="seat-flags">{board.chained && <span title={t("chained")}><Link2 /></span>}{board.faceDown && <span title={t("faceDown")}><RotateCcw /></span>}{board.equipment.length > 0 && <span title={t("equipmentCount", { count: board.equipment.length })}><Shield />{board.equipment.length}</span>}{board.judging.length > 0 && <span title={t("delayedCount", { count: board.judging.length })}><Sparkles />{board.judging.length}</span>}</div>
                 </div>}
                 {room?.activePlayerId === player.id && <span className="seat-turn"><Crown /> {t("turn")}</span>}
@@ -510,10 +484,10 @@ export default function RoomTable() {
             const position = localPositions[canvasKey("pile", pile.id)] ?? pile;
             const topCard = pile.cards.at(-1);
             const selected = canvasSelection?.type === "pile" && canvasSelection.id === pile.id;
-            return <div key={pile.id} className={`canvas-item canvas-pile ${selected ? "is-selected" : ""}`} style={{ left: `${position.x}%`, top: `${position.y}%`, zIndex: pile.zIndex, "--card-rotation": `${pile.rotation}deg` } as React.CSSProperties} onPointerDown={(event) => startCanvasDrag(event, { type: "pile", id: pile.id })} onPointerMove={moveCanvasDrag} onPointerUp={endCanvasDrag} onPointerCancel={endCanvasDrag} onClick={() => selectCanvasItem({ type: "pile", id: pile.id })} onContextMenu={(event) => openCanvasMenu(event, { type: "pile", id: pile.id })} onDoubleClick={() => void runPileAction(pile, "draw")}>
+            return <div key={pile.id} className={`canvas-item canvas-pile ${pile.id === GENERAL_PILE_ID ? "general-pile" : ""} ${selected ? "is-selected" : ""}`} style={{ left: `${position.x}%`, top: `${position.y}%`, zIndex: pile.zIndex, "--card-rotation": `${pile.rotation}deg` } as React.CSSProperties} onPointerDown={(event) => startCanvasDrag(event, { type: "pile", id: pile.id })} onPointerMove={moveCanvasDrag} onPointerUp={endCanvasDrag} onPointerCancel={endCanvasDrag} onClick={() => selectCanvasItem({ type: "pile", id: pile.id })} onContextMenu={(event) => openCanvasMenu(event, { type: "pile", id: pile.id })} onDoubleClick={() => void runPileAction(pile, "draw")}>
               <span className="pile-layer pile-layer-two" /><span className="pile-layer pile-layer-one" />
               {topCard && <CardFace card={topCard} faceDown={pile.faceDown} className="canvas-card" />}
-              <span className="pile-count">{pile.cards.length}</span><span className="pile-label">{pileName(pile.label, language)}</span>
+              <span className="pile-count">{pile.cards.length}</span>{pile.id === GENERAL_PILE_ID ? <button type="button" className="pile-label pile-draw-label" aria-label={t("drawFromGeneralPile", { count: pile.cards.length })} disabled={isActing} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void runPileAction(pile, "draw"); }}>{pileName(pile.label, language)} · {t("draw")}</button> : <span className="pile-label">{pileName(pile.label, language)}</span>}
             </div>;
           })}
           {room?.tokens.map((token) => {
@@ -589,10 +563,6 @@ export default function RoomTable() {
           {!isTamQuocSat && <p>{t("handHint")}</p>}
           {isTamQuocSat && currentBoard && (
             <div className="tam-self-board">
-              <div className="self-generals">
-                {currentBoard.generals.map((general, index) => <GeneralPortrait key={index} general={general} own onClick={() => general ? void sendAction("toggle-general", { slot: index }) : openGeneralPicker()} />)}
-                <button type="button" className="edit-generals" onClick={openGeneralPicker}>{t(currentBoard.generals.some(isVisibleGeneral) ? "redrawGenerals" : "chooseGenerals")}</button>
-              </div>
               <div className="health-control" aria-label={t("healthControls")}>
                 <Heart />
                 <Button size="icon-sm" variant="outline" onClick={() => void sendAction("adjust-hp", { delta: -1 })} disabled={isActing || currentBoard.hp <= 0}><Minus /></Button>
@@ -617,12 +587,12 @@ export default function RoomTable() {
         </div>
         {selectedCard && (
           <div className="card-action-bar" role="toolbar" aria-label={t("actionsFor", { name: selectedCard.name ?? selectedCard.rank })}>
-            <span><b>{selectedCard.name ?? `${selectedCard.rank}${suitSymbol[selectedCard.suit]}`}</b><small>{selectedCard.rank}{suitSymbol[selectedCard.suit]}</small></span>
+            <span><b>{selectedCard.name ?? `${selectedCard.rank}${suitSymbol[selectedCard.suit]}`}</b><small>{selectedCard.cardType === "general" ? `${selectedCard.faction?.toUpperCase()} · ${selectedCard.maxHp ?? selectedCard.rank} ${t("hp")}` : `${selectedCard.rank}${suitSymbol[selectedCard.suit]}`}</small></span>
             {getTamQuocSatCardInfo(selectedCard.cardType) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedCard)}><BookOpenText /> {t("viewCardRule")}</Button>}
             <Button size="sm" onClick={() => void moveSelected("table")} disabled={isActing}><Hand /> {t("play")}</Button>
             <Button size="sm" variant="outline" onClick={() => void moveSelected("table", undefined, true)} disabled={isActing}><EyeOff /> {t("faceDown")}</Button>
-            {isTamQuocSat && <Button size="sm" variant="outline" onClick={() => void moveSelected("equipment")} disabled={isActing}><Shield /> {t("equip")}</Button>}
-            {isTamQuocSat && <Button size="sm" variant="outline" onClick={() => void moveSelected("judging")} disabled={isActing}><Sparkles /> {t("judge")}</Button>}
+            {isTamQuocSat && selectedCard.cardType !== "general" && <Button size="sm" variant="outline" onClick={() => void moveSelected("equipment")} disabled={isActing}><Shield /> {t("equip")}</Button>}
+            {isTamQuocSat && selectedCard.cardType !== "general" && <Button size="sm" variant="outline" onClick={() => void moveSelected("judging")} disabled={isActing}><Sparkles /> {t("judge")}</Button>}
             <Button size="sm" variant="outline" onClick={() => void moveSelected("discard")} disabled={isActing}><Trash2 /> {t("discard")}</Button>
             {opponents.length > 0 && <Select value={giveTargetId} onValueChange={(value) => value && setGiveTargetId(value)}><SelectTrigger aria-label={t("giveTo")}><SelectValue placeholder={t("giveTo")} /></SelectTrigger><SelectContent>{opponents.map((player) => <SelectItem key={player.id} value={player.id}>{player.name}</SelectItem>)}</SelectContent></Select>}
             {giveTargetId && <Button size="sm" variant="outline" onClick={() => void moveSelected("player", giveTargetId)} disabled={isActing}>{t("give")}</Button>}
@@ -640,25 +610,6 @@ export default function RoomTable() {
           </div>
         )}
       </section>
-
-      <Dialog open={generalsOpen} onOpenChange={setGeneralsOpen}>
-        <DialogContent className="generals-dialog">
-          <DialogHeader><DialogTitle>{t("randomGeneralTitle")}</DialogTitle><DialogDescription>{t("generalsDescription")}</DialogDescription></DialogHeader>
-          <div className="random-general-cards" aria-live="polite">
-            {(currentBoard?.generals ?? [null, null]).map((general, index) => isVisibleGeneral(general) ? (
-              <div key={general.id} className={`random-general-card faction-${general.faction}`}>
-                <span style={{ backgroundImage: `url("${general.asset}")` }} />
-                <b>{general.name}</b>
-                <small>{general.faction.toUpperCase()} · {general.maxHp} {t("hp")}</small>
-              </div>
-            ) : (
-              <div key={index} className="random-general-back" aria-label={t("hiddenGeneral")}><span>將</span><small>{t("hidden")}</small></div>
-            ))}
-          </div>
-          <p className="random-general-note">{t("redrawHint")}</p>
-          <div className="dialog-actions"><Button onClick={() => void drawGenerals()} disabled={isActing}>{pendingAction === "draw-generals" ? <LoaderCircle className="spin" /> : <Shuffle />}{t(currentBoard?.generals.some(isVisibleGeneral) ? "redrawGenerals" : "drawTwoGenerals")}</Button></div>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={Boolean(inspectedCard && inspectedCardInfo)} onOpenChange={(open) => { if (!open) setInspectedCard(null); }}>
         {inspectedCard && inspectedCardInfo && <DialogContent className="card-rule-dialog">

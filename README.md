@@ -8,6 +8,7 @@ A lightweight online card table for 1–10 friends. Players join with a room lin
 - Shared table with private player hands
 - Create and join rooms by link or six-character code
 - Deal, shuffle, draw, play, take back, and reset actions
+- A shared, shuffled Tướng pile whose cards draw into private hands in Tam Quốc Sát rooms
 - Persistent rooms backed by Neon Postgres
 - Responsive desktop and mobile interface
 - WebMCP actions for reading the table, drawing, and playing cards

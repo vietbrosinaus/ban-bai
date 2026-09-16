@@ -24,7 +24,7 @@ const copy: Record<Language, Record<string, string>> = {
     addTarget: "Chọn {name} làm mục tiêu", removeTarget: "Bỏ {name} khỏi mục tiêu", hiddenGeneral: "Tướng ẩn", noGeneral: "Chưa chọn tướng",
     chained: "Xích", faceDown: "Úp mặt", equipmentCount: "{count} trang bị", delayedCount: "{count} lá phán xét", shareCircle: "Gửi link để mời thêm người vào bàn",
     sharedCanvas: "Mặt bàn chung", canvasHelp: "Kéo để chọn · Shift-bấm để chọn thêm · Chuột phải để thao tác", canvasAria: "Mặt bàn tự do dùng chung",
-    drawFromDeck: "Rút bài, còn {count} lá", tapDeck: "Bấm vào chồng bài để rút", discard: "Chồng bỏ",
+    drawFromDeck: "Rút bài, còn {count} lá", drawFromGeneralPile: "Rút tướng, còn {count} lá", tapDeck: "Bấm vào chồng bài để rút", discard: "Chồng bỏ",
     dropAnywhere: "Thả ở bất kỳ đâu", yourTableRules: "Bàn của bạn, luật của bạn", emptyCanvas: "Đánh bài, tạo chồng và thêm bộ đếm cho bất kỳ trò chơi nào.",
     tableControls: "Điều khiển bàn", host: "Chủ phòng", cardsEach: "Mỗi người {count} lá", cardsPerPlayer: "Số lá mỗi người", deal: "Chia bài",
     addCounter: "Thêm bộ đếm", shuffleDeck: "Xáo bài", clearCanvas: "Dọn mặt bàn", resetTable: "Đặt lại bàn",
@@ -43,7 +43,7 @@ const copy: Record<Language, Record<string, string>> = {
     discardTitle: "Chồng bài bỏ", discardDescription: "Mọi lá bài đã bỏ hoặc được dọn đều công khai. Bấm một lá để lấy lại khi hiệu ứng thủ công yêu cầu.", noDiscard: "Chưa có lá bài nào bị bỏ.",
     counterDescription: "Dùng bộ đếm cho sinh lực, tiền, điểm, lượt hoặc bất kỳ luật nào nhóm bạn nghĩ ra.", label: "Nhãn", counterPlaceholder: "Ví dụ: Sinh lực", color: "Màu", addToCanvas: "Thêm lên bàn", colorCounter: "Bộ đếm màu {color}",
     takeSeat: "Ngồi vào bàn", takeSeatDescription: "Nhập tên mà bạn bè sẽ thấy. Không cần tài khoản hay mật khẩu.", joining: "Đang vào…", joinTable: "Vào bàn", joined: "Bạn đã vào bàn.", copied: "Đã sao chép link mời.",
-    choose: "Chọn", hidden: "Đang ẩn", hide: "Ẩn", reveal: "Lật", noCards: "0 lá", faceDownTitle: "Lá bài úp", rankOfSuit: "{rank} {suit}",
+    choose: "Chọn", hidden: "Đang ẩn", hide: "Ẩn", reveal: "Lật", noCards: "0 lá", faceDownTitle: "Lá bài úp", rankOfSuit: "{rank} {suit}", generalCardBack: "Lá tướng úp", generalCardLabel: "{name}, phe {faction}, {hp} HP",
     equipZone: "Trang bị", judgeZone: "Phán xét", counterValue: "{label}, giá trị {value}", actionsFor: "Thao tác với {name}", close: "Đóng",
   },
   en: {
@@ -64,7 +64,7 @@ const copy: Record<Language, Record<string, string>> = {
     addTarget: "Add {name} as target", removeTarget: "Remove {name} as target", hiddenGeneral: "Hidden general", noGeneral: "No general selected",
     chained: "Chained", faceDown: "Face down", equipmentCount: "{count} equipment", delayedCount: "{count} delayed tricks", shareCircle: "Share the link to fill the circle",
     sharedCanvas: "Shared canvas", canvasHelp: "Drag to select · Shift-click to add · Right-click for actions", canvasAria: "Shared freeform tabletop canvas",
-    drawFromDeck: "Draw from deck, {count} cards remaining", tapDeck: "Tap deck to draw", discard: "Discard",
+    drawFromDeck: "Draw from deck, {count} cards remaining", drawFromGeneralPile: "Draw a general, {count} cards remaining", tapDeck: "Tap deck to draw", discard: "Discard",
     dropAnywhere: "Drop it anywhere", yourTableRules: "Your table, your rules", emptyCanvas: "Play cards, build piles, and add counters for any game.",
     tableControls: "Table controls", host: "Host", cardsEach: "{count} cards each", cardsPerPlayer: "Cards per player", deal: "Deal",
     addCounter: "Add counter", shuffleDeck: "Shuffle deck", clearCanvas: "Clear canvas", resetTable: "Reset table",
@@ -83,7 +83,7 @@ const copy: Record<Language, Record<string, string>> = {
     discardTitle: "Discard pile", discardDescription: "All discarded and cleared cards are public. Tap a card to retrieve it when a manual effect calls for it.", noDiscard: "No cards have been discarded yet.",
     counterDescription: "Use counters for health, coins, score, turns, or any rule your group invents.", label: "Label", counterPlaceholder: "e.g. Health", color: "Color", addToCanvas: "Add to canvas", colorCounter: "{color} counter",
     takeSeat: "Take a seat", takeSeatDescription: "Enter the name your friends will see. No account or password needed.", joining: "Joining…", joinTable: "Join table", joined: "You’re at the table.", copied: "Invite link copied.",
-    choose: "Choose", hidden: "Hidden", hide: "Hide", reveal: "Reveal", noCards: "0 cards", faceDownTitle: "Face-down card", rankOfSuit: "{rank} of {suit}",
+    choose: "Choose", hidden: "Hidden", hide: "Hide", reveal: "Reveal", noCards: "0 cards", faceDownTitle: "Face-down card", rankOfSuit: "{rank} of {suit}", generalCardBack: "Face-down general card", generalCardLabel: "{name}, {faction} faction, {hp} HP",
     equipZone: "Equip", judgeZone: "Judge", counterValue: "{label}, value {value}", actionsFor: "Actions for {name}", close: "Close",
   },
 };
@@ -217,6 +217,11 @@ export function localizeServerText(text: string, language: Language) {
     [/^(.+) removed (.+)$/, (name, item) => `${name} đã xóa ${item}`],
     [/^(.+) chose two hidden generals$/, (name) => `${name} đã chọn hai tướng ẩn`],
     [/^(.+) drew two hidden generals$/, (name) => `${name} đã rút hai tướng ẩn`],
+    [/^(.+) drew from Generals$/, (name) => `${name} đã rút từ chồng Tướng`],
+    [/^(.+) shuffled Generals$/, (name) => `${name} đã xáo chồng Tướng`],
+    [/^(.+) flipped Generals$/, (name) => `${name} đã lật chồng Tướng`],
+    [/^(.+) spread Generals$/, (name) => `${name} đã trải chồng Tướng`],
+    [/^(.+) discarded Generals$/, (name) => `${name} đã bỏ chồng Tướng`],
     [/^(.+) is now taking a turn$/, (name) => `Đến lượt ${name}`],
   ];
   for (const [pattern, format] of patterns) {
@@ -227,6 +232,7 @@ export function localizeServerText(text: string, language: Language) {
 }
 
 export function pileName(label: string, language: Language) {
+  if (label === "Generals") return language === "vi" ? "Tướng" : "Generals";
   if (language === "vi") return label.replace(/^Pile\s+(\d+)$/i, "Chồng $1");
   return label;
 }
