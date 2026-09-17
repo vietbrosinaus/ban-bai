@@ -60,6 +60,20 @@ export type Player = {
   joinedAt: number;
 };
 
+export type ActivityLogEntry = {
+  id: string;
+  actorId: string;
+  message: string;
+  createdAt: number;
+};
+
+export type PlayerCursor = {
+  x: number;
+  y: number;
+  activity: "table" | "card" | "pile" | "deck" | "controls";
+  updatedAt: number;
+};
+
 export type SelectedGeneral = {
   id: string;
   name: string;
@@ -75,9 +89,6 @@ export type PlayerBoard = {
   hp: number;
   maxHp: number;
   generals: Array<SelectedGeneral | null>;
-  equipment: PlayingCard[];
-  judging: PlayingCard[];
-  chained: boolean;
   faceDown: boolean;
 };
 
@@ -97,12 +108,12 @@ export type RoomState = {
   piles: TablePile[];
   discard: PlayingCard[];
   boards: Record<string, PlayerBoard>;
-  activePlayerId: string | null;
   targets: Record<string, string[]>;
   generalDeckInitialized: boolean;
   revision: number;
   updatedAt: number;
   lastAction: string;
+  activityLog: ActivityLogEntry[];
 };
 
 export type PublicRoom = Omit<RoomState, "hands" | "hostId" | "deck" | "boards" | "generalDeckInitialized"> & {
@@ -146,7 +157,7 @@ export function generalToPlayingCard(general: TamGeneral | SelectedGeneral): Pla
 }
 
 export function createPlayerBoard(): PlayerBoard {
-  return { hp: 4, maxHp: 4, generals: [null, null], equipment: [], judging: [], chained: false, faceDown: false };
+  return { hp: 4, maxHp: 4, generals: [null, null], faceDown: false };
 }
 
 export function normalizeRoomState(state: RoomState): RoomState {
@@ -156,7 +167,9 @@ export function normalizeRoomState(state: RoomState): RoomState {
   state.discard ??= [];
   state.boards ??= {};
   state.targets ??= {};
-  if (state.activePlayerId === undefined) state.activePlayerId = null;
+  if (!state.activityLog) {
+    state.activityLog = state.lastAction ? [{ id: `legacy-${state.revision}`, actorId: state.hostId, message: state.lastAction, createdAt: state.updatedAt }] : [];
+  }
   const occupiedSeats = new Set<number>();
   for (const [index, player] of state.players.entries()) {
     if (!Number.isInteger(player.seat) || player.seat < 0 || player.seat > 9 || occupiedSeats.has(player.seat)) {
@@ -165,6 +178,11 @@ export function normalizeRoomState(state: RoomState): RoomState {
     occupiedSeats.add(player.seat);
     state.hands[player.id] ??= [];
     state.boards[player.id] ??= createPlayerBoard();
+    const legacyBoard = state.boards[player.id] as PlayerBoard & { equipment?: PlayingCard[]; judging?: PlayingCard[]; chained?: boolean };
+    state.hands[player.id].push(...(legacyBoard.equipment ?? []), ...(legacyBoard.judging ?? []));
+    delete legacyBoard.equipment;
+    delete legacyBoard.judging;
+    delete legacyBoard.chained;
     state.targets[player.id] ??= [];
   }
   if (!state.generalDeckInitialized) {
@@ -180,7 +198,6 @@ export function normalizeRoomState(state: RoomState): RoomState {
         ...state.table,
         ...state.piles.flatMap((pile) => pile.cards),
         ...state.discard,
-        ...Object.values(state.boards).flatMap((board) => [...board.equipment, ...board.judging]),
       ].filter((card) => card.cardType === "general").map((card) => card.id));
       const pile = createGeneralPile("system");
       pile.cards = pile.cards.filter((card) => !usedGeneralIds.has(card.id));
@@ -283,11 +300,11 @@ export function publicRoom(state: RoomState, viewerId: string): PublicRoom {
       });
       return [player.id, { ...board, generals }];
     })),
-    activePlayerId: state.activePlayerId,
     targets: state.targets,
     revision: state.revision,
     updatedAt: state.updatedAt,
     lastAction: state.lastAction,
+    activityLog: state.activityLog,
     hand: state.hands[viewerId] ?? [],
     handCounts: Object.fromEntries(state.players.map((player) => [player.id, state.hands[player.id]?.length ?? 0])),
     viewerId,

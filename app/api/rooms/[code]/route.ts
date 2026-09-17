@@ -1,4 +1,4 @@
-import { getRoom, joinRoom, performAction, RoomError } from "@/lib/rooms";
+import { getRoom, getRoomCursors, joinRoom, performAction, RoomError, updateRoomCursor } from "@/lib/rooms";
 
 function roomCode(value: string) {
   return value.trim().toUpperCase().slice(0, 6);
@@ -14,6 +14,7 @@ export async function GET(request: Request, context: RouteContext<"/api/rooms/[c
   try {
     const { code } = await context.params;
     const searchParams = new URL(request.url).searchParams;
+    if (searchParams.get("presence") === "1") return Response.json({ cursors: await getRoomCursors(roomCode(code)) }, { headers: { "cache-control": "no-store" } });
     const playerId = searchParams.get("playerId") ?? "";
     const sinceValue = searchParams.get("since");
     const sinceRevision = sinceValue === null ? undefined : Number(sinceValue);
@@ -31,6 +32,7 @@ export async function POST(request: Request, context: RouteContext<"/api/rooms/[
     const body = await request.json() as { action?: unknown; playerId?: unknown; name?: unknown; data?: Record<string, unknown> };
     if (body.action === "join") return Response.json(await joinRoom(roomCode(code), body.name, body.playerId));
     if (typeof body.playerId !== "string" || typeof body.action !== "string") throw new RoomError("Join the room before playing.", 403);
+    if (body.action === "cursor") return Response.json(await updateRoomCursor(roomCode(code), body.playerId, body.data ?? {}));
     return Response.json(await performAction(roomCode(code), body.playerId, body.action, body.data ?? {}));
   } catch (error) {
     return failure(error);

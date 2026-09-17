@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 
-import { cleanName, createDeck, createGeneralPile, createPlayerBoard, GameMode, normalizeRoomState, playerColors, PlayingCard, publicRoom, RoomState, seatJoinOrder, shuffle, TableCard, TokenColor } from "@/lib/game";
+import { cleanName, createDeck, createGeneralPile, createPlayerBoard, GameMode, generalToPlayingCard, GENERAL_PILE_ID, normalizeRoomState, playerColors, type PlayerCursor, PlayingCard, publicRoom, RoomState, seatJoinOrder, shuffle, TableCard, TokenColor } from "@/lib/game";
 
 type RoomRow = { state: RoomState | string; version: number };
 
@@ -76,6 +76,48 @@ export async function getRoom(code: string, viewerId: string, sinceRevision?: nu
   return publicRoom(state, viewerId);
 }
 
+export async function getRoomCursors(code: string): Promise<Record<string, PlayerCursor>> {
+  const rows = await database().query(`
+    SELECT presence.player_id, presence.x, presence.y, presence.activity, presence.updated_at
+    FROM room_presence AS presence
+    JOIN rooms ON rooms.code = presence.room_code
+    WHERE presence.room_code = $1
+      AND presence.visible = true
+      AND presence.updated_at > $2
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(rooms.state->'players') AS seated
+        WHERE seated->>'id' = presence.player_id
+      )
+  `, [code, Date.now() - 5000]) as Array<{ player_id: string; x: number; y: number; activity: PlayerCursor["activity"]; updated_at: number }>;
+  return Object.fromEntries(rows.map((row) => [row.player_id, { x: Number(row.x), y: Number(row.y), activity: row.activity, updatedAt: Number(row.updated_at) }]));
+}
+
+export async function updateRoomCursor(code: string, playerId: string, data: Record<string, unknown>) {
+  const allowedActivities: PlayerCursor["activity"][] = ["table", "card", "pile", "deck", "controls"];
+  const requestedActivity = String(data.activity ?? "table") as PlayerCursor["activity"];
+  const activity = allowedActivities.includes(requestedActivity) ? requestedActivity : "table";
+  const x = Math.max(0, Math.min(100, Number(data.x) || 0));
+  const y = Math.max(0, Math.min(100, Number(data.y) || 0));
+  const visible = data.visible !== false;
+  const rows = await database().query(`
+    INSERT INTO room_presence (room_code, player_id, x, y, activity, visible, updated_at)
+    SELECT $1, $2, $3, $4, $5, $6, $7
+    WHERE EXISTS (
+      SELECT 1 FROM rooms, jsonb_array_elements(rooms.state->'players') AS seated
+      WHERE rooms.code = $1 AND seated->>'id' = $2
+    )
+    ON CONFLICT (room_code, player_id) DO UPDATE SET
+      x = EXCLUDED.x,
+      y = EXCLUDED.y,
+      activity = EXCLUDED.activity,
+      visible = EXCLUDED.visible,
+      updated_at = EXCLUDED.updated_at
+    RETURNING player_id
+  `, [code, playerId, x, y, activity, visible, Date.now()]);
+  if (!rows.length) throw new RoomError("Join the room before playing.", 403);
+  return { ok: true };
+}
+
 export async function createRoom(nameValue: unknown, gameValue?: unknown) {
   const name = cleanName(nameValue);
   if (!name) throw new RoomError("Please enter your name.");
@@ -85,6 +127,7 @@ export async function createRoom(nameValue: unknown, gameValue?: unknown) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = roomCode();
     const now = Date.now();
+    const openedMessage = `${name} opened the table`;
     const state: RoomState = {
       code,
       hostId: playerId,
@@ -97,12 +140,12 @@ export async function createRoom(nameValue: unknown, gameValue?: unknown) {
       piles: initialPiles(game, playerId),
       discard: [],
       boards: { [playerId]: createPlayerBoard() },
-      activePlayerId: playerId,
       targets: { [playerId]: [] },
       generalDeckInitialized: true,
       revision: 1,
       updatedAt: now,
-      lastAction: `${name} opened the table`,
+      lastAction: openedMessage,
+      activityLog: [{ id: crypto.randomUUID(), actorId: playerId, message: openedMessage, createdAt: now }],
     };
     try {
       await database().query("INSERT INTO rooms (code, state, version, created_at, updated_at) VALUES ($1, $2::jsonb, $3, $4, $5)", [code, JSON.stringify(state), 1, now, now]);
@@ -114,12 +157,13 @@ export async function createRoom(nameValue: unknown, gameValue?: unknown) {
   throw new RoomError("Could not create a room. Please try again.", 503);
 }
 
-async function mutateRoom(code: string, update: (state: RoomState) => RoomState) {
+async function mutateRoom(code: string, actorId: string, update: (state: RoomState) => RoomState) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const row = await readRow(code);
     if (!row) throw new RoomError("That room does not exist.", 404);
     const current = decodeState(row.state);
     const next = update(structuredClone(current));
+    if (next.lastAction) next.activityLog = [...next.activityLog, { id: crypto.randomUUID(), actorId, message: next.lastAction, createdAt: Date.now() }].slice(-100);
     next.revision = current.revision + 1;
     next.updatedAt = Date.now();
     const changed = await database().query("UPDATE rooms SET state = $1::jsonb, version = $2, updated_at = $3 WHERE code = $4 AND version = $5 RETURNING code", [JSON.stringify(next), row.version + 1, next.updatedAt, code, row.version]);
@@ -144,7 +188,7 @@ export async function joinRoom(code: string, nameValue: unknown, suppliedId?: un
   const name = cleanName(nameValue);
   if (!name) throw new RoomError("Please enter your name.");
   const playerId = typeof suppliedId === "string" && suppliedId.length > 20 ? suppliedId : crypto.randomUUID();
-  const state = await mutateRoom(code, (room) => {
+  const state = await mutateRoom(code, playerId, (room) => {
     const returning = room.players.find((player) => player.id === playerId);
     if (returning) {
       returning.name = name;
@@ -163,8 +207,51 @@ export async function joinRoom(code: string, nameValue: unknown, suppliedId?: un
 }
 
 export async function performAction(code: string, playerId: string, action: string, data: Record<string, unknown>) {
-  const state = await mutateRoom(code, (room) => {
+  const state = await mutateRoom(code, playerId, (room) => {
     const player = requirePlayer(room, playerId);
+    if (action === "kick-player") {
+      requireHost(room, playerId);
+      const targetPlayerId = String(data.targetPlayerId ?? "");
+      if (targetPlayerId === playerId) throw new RoomError("You cannot remove yourself from the table.");
+      const targetIndex = room.players.findIndex((seated) => seated.id === targetPlayerId);
+      if (targetIndex < 0) throw new RoomError("That player is no longer at the table.", 409);
+      const [target] = room.players.splice(targetIndex, 1);
+      const board = room.boards[targetPlayerId];
+      const returnedCards = [
+        ...(room.hands[targetPlayerId] ?? []),
+        ...(board?.generals.flatMap((general) => general ? [generalToPlayingCard(general)] : []) ?? []),
+      ];
+      const generalCards = returnedCards.filter((card) => card.cardType === "general");
+      const deckCards = returnedCards.filter((card) => card.cardType !== "general");
+      if (deckCards.length) room.deck = shuffle([...room.deck, ...deckCards]);
+      if (generalCards.length) {
+        let generalPile = room.piles.find((pile) => pile.id === GENERAL_PILE_ID);
+        if (!generalPile) {
+          generalPile = createGeneralPile(playerId);
+          generalPile.cards = [];
+          room.piles.push(generalPile);
+        }
+        const now = Date.now();
+        generalPile.cards.push(...generalCards.map((card, index) => ({
+          ...card,
+          playedBy: targetPlayerId,
+          playedAt: now,
+          x: generalPile.x,
+          y: generalPile.y,
+          rotation: 0,
+          faceDown: true,
+          zIndex: generalPile.cards.length + index + 1,
+        })));
+        generalPile.cards = shuffle(generalPile.cards);
+        generalPile.faceDown = true;
+      }
+      delete room.hands[targetPlayerId];
+      delete room.boards[targetPlayerId];
+      delete room.targets[targetPlayerId];
+      for (const seated of room.players) room.targets[seated.id] = (room.targets[seated.id] ?? []).filter((id) => id !== targetPlayerId);
+      room.lastAction = `${player.name} removed ${target.name} from the table`;
+      return room;
+    }
     if (action === "draw") {
       const count = Math.max(1, Math.min(5, Number(data.count) || 1));
       let drawn = 0;
@@ -185,13 +272,7 @@ export async function performAction(code: string, playerId: string, action: stri
       if (index < 0) throw new RoomError("That card is not in your hand.", 409);
       const [card] = hand.splice(index, 1);
       const destination = action === "play" ? "table" : String(data.destination ?? "table");
-      if (destination === "equipment") {
-        room.boards[playerId].equipment.push(card);
-        room.lastAction = `${player.name} equipped ${card.name ?? card.rank}`;
-      } else if (destination === "judging") {
-        room.boards[playerId].judging.push(card);
-        room.lastAction = `${player.name} placed ${card.name ?? card.rank} in the delayed-trick zone`;
-      } else if (destination === "discard") {
+      if (destination === "discard") {
         room.discard.push(card);
         room.lastAction = `${player.name} discarded ${card.name ?? card.rank}`;
       } else if (destination === "player") {
@@ -200,10 +281,10 @@ export async function performAction(code: string, playerId: string, action: stri
         if (targetId === playerId) throw new RoomError("Choose another player.");
         room.hands[targetId].push(card);
         room.lastAction = `${player.name} gave a card to ${target.name}`;
-      } else {
+      } else if (destination === "table") {
         room.table.push(tableCard(room, card, playerId, data));
         room.lastAction = `${player.name} played ${card.name ?? card.rank}`;
-      }
+      } else throw new RoomError("Unknown card destination.");
       return room;
     }
     if (action === "take-back") {
@@ -212,20 +293,6 @@ export async function performAction(code: string, playerId: string, action: stri
       room.table.pop();
       room.hands[playerId].push(toPlayingCard(card));
       room.lastAction = `${player.name} took back a card`;
-      return room;
-    }
-    if (action === "move-zone-card") {
-      const source = String(data.source ?? "");
-      if (source !== "equipment" && source !== "judging") throw new RoomError("Unknown card zone.");
-      const zone = room.boards[playerId][source];
-      const index = zone.findIndex((card) => card.id === String(data.cardId ?? ""));
-      if (index < 0) throw new RoomError("That card is not in your zone.", 409);
-      const [card] = zone.splice(index, 1);
-      const destination = String(data.destination ?? "discard");
-      if (destination === "hand") room.hands[playerId].push(card);
-      else if (destination === "table") room.table.push(tableCard(room, card, playerId, data));
-      else room.discard.push(card);
-      room.lastAction = `${player.name} moved ${card.name ?? card.rank} from ${source}`;
       return room;
     }
     if (action === "take-discard") {
@@ -237,6 +304,7 @@ export async function performAction(code: string, playerId: string, action: stri
       return room;
     }
     if (action === "clear-table") {
+      requireHost(room, playerId);
       if (!room.table.length && !room.tokens.length && !room.piles.length) throw new RoomError("The canvas is already empty.", 409);
       room.discard.push(...room.table.map(toPlayingCard));
       room.discard.push(...room.piles.flatMap((pile) => pile.cards.map(toPlayingCard)));
@@ -334,12 +402,42 @@ export async function performAction(code: string, playerId: string, action: stri
       const pile = room.piles.find((item) => item.id === String(data.pileId ?? ""));
       if (!pile) throw new RoomError("That pile is no longer on the canvas.", 409);
       const ids = new Set(Array.isArray(data.cardIds) ? data.cardIds.map(String) : []);
-      const cards = room.table.filter((card) => ids.has(card.id)).sort((a, b) => a.zIndex - b.zIndex);
+      const tableCards = room.table.filter((card) => ids.has(card.id)).sort((a, b) => a.zIndex - b.zIndex);
+      const handCards = room.hands[playerId].filter((card) => ids.has(card.id)).map((card) => tableCard(room, card, playerId, { x: pile.x, y: pile.y, faceDown: pile.faceDown }));
+      const cards = [...tableCards, ...handCards];
       if (!cards.length) throw new RoomError("Select cards to add to the pile.");
       room.table = room.table.filter((card) => !ids.has(card.id));
-      pile.cards.push(...cards);
+      room.hands[playerId] = room.hands[playerId].filter((card) => !ids.has(card.id));
+      const placement = data.placement === "random" ? "random" : "top";
+      if (placement === "random") {
+        for (const card of cards) {
+          const sample = new Uint32Array(1);
+          crypto.getRandomValues(sample);
+          pile.cards.splice(sample[0] % (pile.cards.length + 1), 0, card);
+        }
+      } else pile.cards.push(...cards);
       pile.zIndex = topLayer(room);
-      room.lastAction = `${player.name} added ${cards.length} ${cards.length === 1 ? "card" : "cards"} to ${pile.label}`;
+      room.lastAction = `${player.name} added ${cards.length} ${cards.length === 1 ? "card" : "cards"} ${placement === "random" ? "randomly into" : "to the top of"} ${pile.label}`;
+      return room;
+    }
+    if (action === "add-cards-to-deck") {
+      const ids = new Set(Array.isArray(data.cardIds) ? data.cardIds.map(String) : []);
+      const tableCards = room.table.filter((card) => ids.has(card.id));
+      const handCards = room.hands[playerId].filter((card) => ids.has(card.id));
+      const cards = [...tableCards.map(toPlayingCard), ...handCards];
+      if (!cards.length) throw new RoomError("Select cards to return to the deck.");
+      if (cards.some((card) => card.cardType === "general")) throw new RoomError("Return general cards to the general pile.");
+      room.table = room.table.filter((card) => !ids.has(card.id));
+      room.hands[playerId] = room.hands[playerId].filter((card) => !ids.has(card.id));
+      const placement = data.placement === "random" ? "random" : "top";
+      if (placement === "random") {
+        for (const card of cards) {
+          const sample = new Uint32Array(1);
+          crypto.getRandomValues(sample);
+          room.deck.splice(sample[0] % (room.deck.length + 1), 0, card);
+        }
+      } else room.deck.push(...cards);
+      room.lastAction = `${player.name} returned ${cards.length} ${cards.length === 1 ? "card" : "cards"} ${placement === "random" ? "randomly into" : "to the top of"} the deck`;
       return room;
     }
     if (action === "add-token") {
@@ -392,9 +490,9 @@ export async function performAction(code: string, playerId: string, action: stri
     }
     if (action === "toggle-status") {
       const status = String(data.status ?? "");
-      if (status !== "chained" && status !== "faceDown") throw new RoomError("Unknown status.");
-      room.boards[playerId][status] = !room.boards[playerId][status];
-      room.lastAction = `${player.name} is ${room.boards[playerId][status] ? (status === "chained" ? "chained" : "face down") : "upright"}`;
+      if (status !== "faceDown") throw new RoomError("Unknown status.");
+      room.boards[playerId].faceDown = !room.boards[playerId].faceDown;
+      room.lastAction = `${player.name} is ${room.boards[playerId].faceDown ? "face down" : "upright"}`;
       return room;
     }
     if (action === "toggle-target") {
@@ -411,16 +509,7 @@ export async function performAction(code: string, playerId: string, action: stri
       room.lastAction = `${player.name} cleared their targets`;
       return room;
     }
-    if (action === "set-active") {
-      const targetId = String(data.targetPlayerId ?? playerId);
-      const target = requirePlayer(room, targetId);
-      room.activePlayerId = targetId;
-      room.targets[playerId] = [];
-      room.lastAction = `${target.name} is now taking a turn`;
-      return room;
-    }
     if (action === "shuffle") {
-      requireHost(room, playerId);
       room.deck = shuffle(room.deck);
       room.lastAction = `${player.name} shuffled the deck`;
       return room;
@@ -434,13 +523,9 @@ export async function performAction(code: string, playerId: string, action: stri
       room.piles = initialPiles(room.game, playerId);
       room.discard = [];
       room.targets = Object.fromEntries(room.players.map((seated) => [seated.id, []]));
-      room.activePlayerId = room.players[0]?.id ?? null;
       for (const seated of room.players) {
         room.hands[seated.id] = [];
         const board = room.boards[seated.id];
-        board.equipment = [];
-        board.judging = [];
-        board.chained = false;
         board.faceDown = false;
         board.hp = board.maxHp;
       }
@@ -461,13 +546,9 @@ export async function performAction(code: string, playerId: string, action: stri
       room.piles = initialPiles(room.game, playerId);
       room.discard = [];
       room.targets = Object.fromEntries(room.players.map((seated) => [seated.id, []]));
-      room.activePlayerId = room.players[0]?.id ?? null;
       for (const seated of room.players) {
         room.hands[seated.id] = [];
         const board = room.boards[seated.id];
-        board.equipment = [];
-        board.judging = [];
-        board.chained = false;
         board.faceDown = false;
         board.hp = board.maxHp;
       }
@@ -476,5 +557,6 @@ export async function performAction(code: string, playerId: string, action: stri
     }
     throw new RoomError("Unknown table action.");
   });
+  if (action === "kick-player") await database().query("DELETE FROM room_presence WHERE room_code = $1 AND player_id = $2", [code, String(data.targetPlayerId ?? "")]);
   return publicRoom(state, playerId);
 }

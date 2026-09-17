@@ -1,17 +1,18 @@
 "use client";
 
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BookOpenText, Check, CircleDot, Copy, Crown, Crosshair, Eye, EyeOff, FlipHorizontal2, Hand, Heart, Layers3, Link2, LoaderCircle, LogOut, Minus, Move, Plus, Redo2, RefreshCw, RotateCcw, RotateCw, Shield, Shuffle, Sparkles, Trash2, Undo2, Users, Wifi, WifiOff } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BookOpenText, Check, CircleDot, Copy, Crown, Crosshair, Eye, EyeOff, FlipHorizontal2, Hand, Heart, Layers3, LoaderCircle, LogOut, Minus, MousePointer2, Move, Plus, Redo2, RefreshCw, RotateCcw, RotateCw, ScrollText, Shuffle, Sparkles, Trash2, Undo2, UserRoundX, Users, Wifi, WifiOff } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LanguageToggle, localizeServerText, pileName, useLanguage } from "@/components/language-provider";
-import { GENERAL_PILE_ID, type PlayingCard, type PublicPlayerBoard, type PublicRoom, type Suit, type TableCard, type TablePile, type TableToken, type TokenColor } from "@/lib/game";
+import { GENERAL_PILE_ID, type PlayerCursor, type PlayingCard, type PublicRoom, type Suit, type TableCard, type TablePile, type TableToken, type TokenColor } from "@/lib/game";
 import { getTamQuocSatGeneralInfo } from "@/lib/tam-quoc-sat-general-rules";
 import { getTamQuocSatCardInfo } from "@/lib/tam-quoc-sat";
 
@@ -46,7 +47,9 @@ type CanvasSelection = { type: "card" | "token" | "pile"; id: string };
 type CanvasPosition = { x: number; y: number };
 type CanvasDrag = CanvasSelection & { pointerId: number; startX: number; startY: number; moved: boolean; rect: DOMRect; additive: boolean; groupCards: TableCard[] };
 type Marquee = { pointerId: number; startX: number; startY: number; x: number; y: number };
-type CanvasMenu = CanvasSelection & { x: number; y: number };
+type CanvasMenuTarget = CanvasSelection | { type: "deck"; id: "deck" };
+type CanvasMenu = CanvasMenuTarget & { x: number; y: number };
+type CursorUpdate = Omit<PlayerCursor, "updatedAt"> & { visible: boolean };
 
 function canvasKey(type: CanvasSelection["type"], id: string) {
   return `${type}:${id}`;
@@ -56,16 +59,6 @@ function hasCardRules(card: PlayingCard) {
   return card.cardType === "general"
     ? Boolean(getTamQuocSatGeneralInfo(card.id))
     : Boolean(getTamQuocSatCardInfo(card.cardType));
-}
-
-function BoardZones({ board, own, onZoneCard }: { board: PublicPlayerBoard; own?: boolean; onZoneCard?: (source: "equipment" | "judging", card: PlayingCard) => void }) {
-  const { t } = useLanguage();
-  return (
-    <div className="board-zones">
-      <div><Shield /><span>{t("equip")}</span>{board.equipment.length ? board.equipment.map((card) => <button type="button" key={card.id} onClick={() => onZoneCard?.("equipment", card)} disabled={!own} title={card.name}><span style={{ backgroundImage: card.asset ? `url("${card.asset}")` : undefined }} />{card.name ?? card.rank}</button>) : <em>—</em>}</div>
-      <div><Sparkles /><span>{t("judge")}</span>{board.judging.length ? board.judging.map((card) => <button type="button" key={card.id} onClick={() => onZoneCard?.("judging", card)} disabled={!own} title={card.name}><span style={{ backgroundImage: card.asset ? `url("${card.asset}")` : undefined }} />{card.name ?? card.rank}</button>) : <em>—</em>}</div>
-    </div>
-  );
 }
 
 export default function RoomTable() {
@@ -79,7 +72,6 @@ export default function RoomTable() {
   const [joinOpen, setJoinOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [dealCount, setDealCount] = useState("4");
   const [fatalError, setFatalError] = useState("");
   const [copied, setCopied] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
@@ -87,22 +79,28 @@ export default function RoomTable() {
   const [dragOver, setDragOver] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [inspectedCard, setInspectedCard] = useState<PlayingCard | null>(null);
-  const [selectedZone, setSelectedZone] = useState<{ source: "equipment" | "judging"; card: PlayingCard } | null>(null);
   const [giveTargetId, setGiveTargetId] = useState("");
   const [discardOpen, setDiscardOpen] = useState(false);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [tokenLabel, setTokenLabel] = useState("");
   const [tokenColor, setTokenColor] = useState<TokenColor>("gold");
+  const [kickTarget, setKickTarget] = useState<{ id: string; name: string } | null>(null);
   const [canvasSelection, setCanvasSelection] = useState<CanvasSelection | null>(null);
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [localPositions, setLocalPositions] = useState<Record<string, CanvasPosition>>({});
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenu | null>(null);
+  const [remoteCursors, setRemoteCursors] = useState<Record<string, PlayerCursor>>({});
+  const [logOpen, setLogOpen] = useState(false);
   const revisionRef = useRef(0);
   const actionLockRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<CanvasDrag | null>(null);
   const suppressCanvasClickRef = useRef(false);
+  const cursorTimerRef = useRef<number | null>(null);
+  const cursorLastSentRef = useRef(0);
+  const cursorPendingRef = useRef<CursorUpdate | null>(null);
+  const cursorLatestRef = useRef<CursorUpdate>({ x: 50, y: 50, activity: "table", visible: false });
 
   const applyRoom = useCallback((next: PublicRoom) => {
     revisionRef.current = Math.max(revisionRef.current, next.revision);
@@ -196,6 +194,70 @@ export default function RoomTable() {
     };
   }, [playerId, refresh, storageReady]);
 
+  useEffect(() => {
+    if (!storageReady || !playerId) return;
+    let stopped = false;
+    let timer: number | undefined;
+    let controller: AbortController | null = null;
+    const pollPresence = async () => {
+      controller = new AbortController();
+      try {
+        const response = await fetch(`/api/rooms/${encodeURIComponent(code)}?presence=1`, { cache: "no-store", signal: controller.signal });
+        const result = await response.json() as { cursors?: Record<string, PlayerCursor> };
+        if (response.ok && result.cursors) setRemoteCursors(result.cursors);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setRemoteCursors({});
+      }
+      if (!stopped) timer = window.setTimeout(pollPresence, document.hidden ? 1800 : 350);
+    };
+    void pollPresence();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+      controller?.abort();
+    };
+  }, [code, playerId, storageReady]);
+
+  const sendCursorPresence = useCallback((cursor: CursorUpdate) => {
+    if (!playerId) return;
+    void fetch(`/api/rooms/${encodeURIComponent(code)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "cursor", playerId, data: cursor }),
+      keepalive: true,
+    }).catch(() => undefined);
+  }, [code, playerId]);
+
+  const queueCursorPresence = useCallback((cursor: CursorUpdate) => {
+    cursorLatestRef.current = cursor;
+    cursorPendingRef.current = cursor;
+    if (cursorTimerRef.current !== null) return;
+    const flush = () => {
+      cursorTimerRef.current = null;
+      const pending = cursorPendingRef.current;
+      cursorPendingRef.current = null;
+      if (!pending) return;
+      cursorLastSentRef.current = performance.now();
+      sendCursorPresence(pending);
+    };
+    const remaining = Math.max(0, 300 - (performance.now() - cursorLastSentRef.current));
+    if (remaining === 0) flush();
+    else cursorTimerRef.current = window.setTimeout(flush, remaining);
+  }, [sendCursorPresence]);
+
+  useEffect(() => () => {
+    if (cursorTimerRef.current !== null) window.clearTimeout(cursorTimerRef.current);
+    sendCursorPresence({ ...cursorLatestRef.current, visible: false });
+  }, [sendCursorPresence]);
+
+  useEffect(() => {
+    if (!playerId) return;
+    const heartbeat = window.setInterval(() => {
+      if (!document.hidden && cursorLatestRef.current.visible) sendCursorPresence(cursorLatestRef.current);
+    }, 2500);
+    return () => window.clearInterval(heartbeat);
+  }, [playerId, sendCursorPresence]);
+
   async function join(event: FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
@@ -258,6 +320,32 @@ export default function RoomTable() {
     window.setTimeout(() => setCopied(false), 1600);
   }
 
+  function trackPlayerCursor(event: React.PointerEvent<HTMLElement>) {
+    if (!playerId || event.pointerType === "touch") return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const target = event.target instanceof Element ? event.target : null;
+    const activity: PlayerCursor["activity"] = target?.closest(".canvas-card-item,.playing-card") ? "card"
+      : target?.closest(".canvas-pile") ? "pile"
+        : target?.closest(".canvas-deck") ? "deck"
+          : target?.closest(".table-controls,.canvas-action-bar,.canvas-context-menu") ? "controls"
+            : "table";
+    queueCursorPresence({
+      x: Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100)),
+      y: Math.max(0, Math.min(100, ((event.clientY - rect.top) / rect.height) * 100)),
+      activity,
+      visible: true,
+    });
+  }
+
+  function hidePlayerCursor() {
+    if (cursorTimerRef.current !== null) window.clearTimeout(cursorTimerRef.current);
+    cursorTimerRef.current = null;
+    cursorPendingRef.current = null;
+    const hidden = { ...cursorLatestRef.current, visible: false };
+    cursorLatestRef.current = hidden;
+    sendCursorPresence(hidden);
+  }
+
   const currentPlayer = room?.players.find((player) => player.id === playerId);
   const opponents = useMemo(() => room?.players.filter((player) => player.id !== playerId) ?? [], [room, playerId]);
   const isTamQuocSat = room?.game === "tam-quoc-sat";
@@ -265,10 +353,12 @@ export default function RoomTable() {
   const selectedCard = room?.hand.find((card) => card.id === selectedCardId);
   const selectedTableCards = room?.table.filter((card) => selectedCardIds.includes(card.id)) ?? [];
   const selectedTableCard = selectedTableCards[0];
+  const selectedReturnCardIds = selectedTableCards.length ? selectedCardIds : selectedCard ? [selectedCard.id] : [];
   const selectedToken = canvasSelection?.type === "token" ? room?.tokens.find((token) => token.id === canvasSelection.id) : undefined;
   const selectedPile = canvasSelection?.type === "pile" ? room?.piles.find((pile) => pile.id === canvasSelection.id) : undefined;
   const contextPile = canvasMenu?.type === "pile" ? room?.piles.find((pile) => pile.id === canvasMenu.id) : undefined;
   const contextCard = canvasMenu?.type === "card" ? room?.table.find((card) => card.id === canvasMenu.id) : undefined;
+  const logTime = useMemo(() => new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-AU", { hour: "2-digit", minute: "2-digit", second: "2-digit" }), [language]);
   const inspectedCardInfo = getTamQuocSatCardInfo(inspectedCard?.cardType);
   const inspectedGeneralInfo = inspectedCard?.cardType === "general" ? getTamQuocSatGeneralInfo(inspectedCard.id) : undefined;
   const myTargets = room?.targets[playerId] ?? [];
@@ -335,7 +425,6 @@ export default function RoomTable() {
   function selectCanvasItem(selection: CanvasSelection, additive = false) {
     if (suppressCanvasClickRef.current) return;
     setSelectedCardId(null);
-    setSelectedZone(null);
     setCanvasMenu(null);
     if (selection.type === "card") {
       setSelectedCardIds((current) => additive ? current.includes(selection.id) ? current.filter((id) => id !== selection.id) : [...current, selection.id] : [selection.id]);
@@ -390,14 +479,14 @@ export default function RoomTable() {
     setMarquee(null);
   }
 
-  function openCanvasMenu(event: React.MouseEvent, selection: CanvasSelection) {
+  function openCanvasMenu(event: React.MouseEvent, selection: CanvasMenuTarget) {
     event.preventDefault();
     event.stopPropagation();
     if (selection.type === "card" && !selectedCardIds.includes(selection.id)) {
       setSelectedCardIds([selection.id]);
       setCanvasSelection(selection);
-    } else if (selection.type !== "card") setCanvasSelection(selection);
-    setCanvasMenu({ ...selection, x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 330) });
+    } else if (selection.type !== "card" && selection.type !== "deck") setCanvasSelection(selection);
+    setCanvasMenu({ ...selection, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 210)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - 420)) });
   }
 
   async function runCardAction(cardAction: string) {
@@ -421,6 +510,37 @@ export default function RoomTable() {
     if (await sendAction("pile-action", { pileId: pile.id, pileAction, ...extra })) {
       if (pileAction === "spread" || pileAction === "discard" || (pileAction === "draw" && pile.cards.length === 1)) setCanvasSelection(null);
       setCanvasMenu(null);
+    }
+  }
+
+  async function addSelectedCardsToPile(pile: TablePile, placement: "top" | "random") {
+    if (await sendAction("add-cards-to-pile", { pileId: pile.id, cardIds: selectedReturnCardIds, placement })) {
+      setSelectedCardIds([]);
+      setSelectedCardId(null);
+      setCanvasSelection(null);
+      setCanvasMenu(null);
+    }
+  }
+
+  async function addSelectedCardsToDeck(placement: "top" | "random") {
+    if (await sendAction("add-cards-to-deck", { cardIds: selectedReturnCardIds, placement })) {
+      setSelectedCardIds([]);
+      setSelectedCardId(null);
+      setCanvasSelection(null);
+      setCanvasMenu(null);
+    }
+  }
+
+  async function runDeckAction(deckAction: "draw" | "shuffle") {
+    if (await sendAction(deckAction)) setCanvasMenu(null);
+  }
+
+  async function kickSelectedPlayer() {
+    const target = kickTarget;
+    if (!target) return;
+    if (await sendAction("kick-player", { targetPlayerId: target.id })) {
+      setKickTarget(null);
+      toast.success(t("playerKicked", { name: target.name }));
     }
   }
 
@@ -452,23 +572,23 @@ export default function RoomTable() {
         <div className="room-header-tools"><LanguageToggle compact /><Button className="invite-button" onClick={copyInvite}><Users /> {t("inviteFriends")}</Button></div>
       </header>
 
-      <section className={`felt-table ${dragOver ? "is-drop-target" : ""}`} onClick={(event) => { if (event.target === event.currentTarget) setCanvasSelection(null); }}>
+      <section className={`felt-table ${dragOver ? "is-drop-target" : ""}`} onPointerMove={trackPlayerCursor} onPointerLeave={hidePlayerCursor} onClick={(event) => { if (event.target === event.currentTarget) setCanvasSelection(null); }}>
         <div className="player-ring" aria-label={t("fixedSeating")}>
           {room?.players.map((player) => {
             const board = room?.boards[player.id];
             const targeted = myTargets.includes(player.id);
             const isSelf = player.id === playerId;
             return (
-              <div className={`table-seat seat-${player.seat} ${isTamQuocSat ? "tam-table-seat" : ""} ${targeted ? "is-targeted" : ""} ${room?.activePlayerId === player.id ? "is-active" : ""} ${isSelf ? "is-self" : ""}`} key={player.id}>
+              <div className={`table-seat seat-${player.seat} ${isTamQuocSat ? "tam-table-seat" : ""} ${targeted ? "is-targeted" : ""} ${isSelf ? "is-self" : ""}`} key={player.id}>
                 <button type="button" className="seat-main" onClick={() => !isSelf && isTamQuocSat && void sendAction("toggle-target", { targetPlayerId: player.id })} disabled={isActing || isSelf || !isTamQuocSat} aria-label={isSelf ? t("yourSeat", { name: player.name }) : isTamQuocSat ? t(targeted ? "removeTarget" : "addTarget", { name: player.name }) : t("seat", { name: player.name, seat: player.seat + 1 })}>
                   <span className="player-avatar" style={{ background: player.color }}>{player.name.slice(0, 2).toUpperCase()}</span>
                   <span className="seat-name"><b>{player.name}{isSelf && <i> {t("you")}</i>}</b><small>{isTamQuocSat && board && <><Heart /> {board.hp}/{board.maxHp} · </>}{t("cards", { count: room?.handCounts[player.id] ?? 0 })}</small></span>
                   {targeted && <Crosshair className="target-mark" />}
                 </button>
                 {isTamQuocSat && board && <div className="seat-details">
-                  <div className="seat-flags">{board.chained && <span title={t("chained")}><Link2 /></span>}{board.faceDown && <span title={t("faceDown")}><RotateCcw /></span>}{board.equipment.length > 0 && <span title={t("equipmentCount", { count: board.equipment.length })}><Shield />{board.equipment.length}</span>}{board.judging.length > 0 && <span title={t("delayedCount", { count: board.judging.length })}><Sparkles />{board.judging.length}</span>}</div>
+                  <div className="seat-flags">{board.faceDown && <span title={t("faceDown")}><RotateCcw /></span>}</div>
                 </div>}
-                {room?.activePlayerId === player.id && <span className="seat-turn"><Crown /> {t("turn")}</span>}
+                {room?.isHost && !isSelf && <button type="button" className="seat-kick" onClick={(event) => { event.stopPropagation(); setKickTarget({ id: player.id, name: player.name }); }} disabled={isActing} aria-label={t("kickPlayer", { name: player.name })} title={t("kickPlayer", { name: player.name })}><UserRoundX /></button>}
                 <span className="seat-number">{player.seat + 1}</span>
               </div>
             );
@@ -476,11 +596,18 @@ export default function RoomTable() {
           {room && room.players.length === 1 && <div className="invite-seat-hint"><Users /><span>{t("shareCircle")}</span></div>}
         </div>
 
+        {room && Object.entries(remoteCursors).map(([cursorPlayerId, cursor]) => {
+          if (cursorPlayerId === playerId) return null;
+          const cursorPlayer = room.players.find((player) => player.id === cursorPlayerId);
+          if (!cursorPlayer) return null;
+          return <div key={cursorPlayerId} className={`player-cursor ${cursor.x > 72 ? "is-right-edge" : ""} ${cursor.y > 74 ? "is-bottom-edge" : ""}`} style={{ "--cursor-x": `${cursor.x}%`, "--cursor-y": `${cursor.y}%`, "--cursor-color": cursorPlayer.color } as React.CSSProperties} aria-hidden="true"><MousePointer2 /><span>{cursorPlayer.name}<small>{t(`cursorActivity_${cursor.activity}`)}</small></span></div>;
+        })}
+
         <div className="canvas-surface" ref={canvasRef} aria-label={t("canvasAria")} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { const nextTarget = event.relatedTarget; if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) setDragOver(false); }} onDrop={dropCardOnCanvas} onPointerDown={startMarquee} onPointerMove={moveMarquee} onPointerUp={endMarquee} onPointerCancel={() => setMarquee(null)} onContextMenu={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }}>
           <div className="canvas-caption"><Move /><span>{t("sharedCanvas")}</span><small>{t("canvasHelp")}</small></div>
           <div className="deck-area canvas-deck">
-            <button type="button" className={`card-deck ${room?.game === "tam-quoc-sat" ? "tam-quoc-deck" : ""} ${pendingAction === "draw" ? "is-pending" : ""}`} onClick={() => void sendAction("draw")} disabled={isActing || !room?.deckCount} aria-label={t("drawFromDeck", { count: room?.deckCount ?? 0 })}><span>{room?.game === "tam-quoc-sat" ? "殺" : "BB"}</span><b>{pendingAction === "draw" ? <LoaderCircle className="sync-spinner" /> : room?.deckCount ?? 0}</b></button>
-            <span>{t("tapDeck")}</span>
+            <button type="button" className={`card-deck ${room?.game === "tam-quoc-sat" ? "tam-quoc-deck" : ""} ${pendingAction === "draw" ? "is-pending" : ""}`} onClick={() => { if (room?.deckCount) void sendAction("draw"); }} onContextMenu={(event) => openCanvasMenu(event, { type: "deck", id: "deck" })} disabled={isActing} aria-label={t("drawFromDeck", { count: room?.deckCount ?? 0 })}><span>{room?.game === "tam-quoc-sat" ? "殺" : "BB"}</span><b>{pendingAction === "draw" ? <LoaderCircle className="sync-spinner" /> : room?.deckCount ?? 0}</b></button>
+            <span>{t("deckHint")}</span>
             <button type="button" className="discard-pile-button" onClick={() => setDiscardOpen(true)}><Trash2 /><span>{t("discard")}</span><b>{room?.discard.length ?? 0}</b></button>
           </div>
           {room?.table.map((card) => {
@@ -509,17 +636,9 @@ export default function RoomTable() {
 
         <aside className="table-controls">
           <div className="control-title"><span>{t("tableControls")}</span>{room?.isHost && <b><Crown /> {t("host")}</b>}</div>
-          <div className="deal-control">
-            <Select value={dealCount} onValueChange={(value) => value && setDealCount(value)}>
-              <SelectTrigger aria-label={t("cardsPerPlayer")}><SelectValue /></SelectTrigger>
-              <SelectContent>{[3, 4, 5, 7, 9, 10, 13].map((count) => <SelectItem key={count} value={String(count)}>{t("cardsEach", { count })}</SelectItem>)}</SelectContent>
-            </Select>
-            <Button disabled={!room?.isHost || isActing} onClick={() => void sendAction("deal", { count: Number(dealCount) })}>{pendingAction === "deal" ? <LoaderCircle className="sync-spinner" /> : t("deal")}</Button>
-          </div>
           <Button variant="outline" disabled={isActing} onClick={() => setTokenDialogOpen(true)}><CircleDot /> {t("addCounter")}</Button>
-          <Button variant="outline" disabled={!room?.isHost || isActing} onClick={() => void sendAction("shuffle")}><Shuffle className={pendingAction === "shuffle" ? "sync-spinner" : ""} /> {t("shuffleDeck")}</Button>
-          <Button variant="outline" disabled={isActing || (!room?.table.length && !room?.tokens.length && !room?.piles.length)} onClick={() => void sendAction("clear-table")}><Trash2 className={pendingAction === "clear-table" ? "sync-spinner" : ""} /> {t("clearCanvas")}</Button>
-          <Button variant="ghost" disabled={!room?.isHost || isActing} onClick={() => void sendAction("reset")}><RefreshCw className={pendingAction === "reset" ? "sync-spinner" : ""} /> {t("resetTable")}</Button>
+          {room?.isHost && <Button variant="outline" disabled={isActing || (!room?.table.length && !room?.tokens.length && !room?.piles.length)} onClick={() => void sendAction("clear-table")}><Trash2 className={pendingAction === "clear-table" ? "sync-spinner" : ""} /> {t("clearCanvas")}</Button>}
+          {room?.isHost && <Button className="reset-table-control" variant="ghost" disabled={isActing} onClick={() => void sendAction("reset")}><RefreshCw className={pendingAction === "reset" ? "sync-spinner" : ""} /> {t("resetTable")}</Button>}
         </aside>
 
         {(selectedTableCard || selectedToken || selectedPile) && <div className="canvas-action-bar" role="toolbar" aria-label={t(selectedTableCard ? "selectedCardControls" : selectedPile ? "selectedPileControls" : "selectedCounterControls")}>
@@ -556,12 +675,13 @@ export default function RoomTable() {
           <Button size="icon-sm" variant="ghost" aria-label={t("closeControls")} onClick={() => { setCanvasSelection(null); setSelectedCardIds([]); }}><Undo2 /></Button>
         </div>}
 
-        {canvasMenu && <div className="canvas-context-menu" style={{ left: canvasMenu.x, top: canvasMenu.y }} role="menu" aria-label={t(canvasMenu.type === "pile" ? "pileActions" : "cardActions")}>
+        {canvasMenu && <div className="canvas-context-menu" style={{ left: canvasMenu.x, top: canvasMenu.y }} role="menu" aria-label={t(canvasMenu.type === "deck" ? "deckActions" : canvasMenu.type === "pile" ? "pileActions" : "cardActions")}>
           {canvasMenu.type === "card" && <><b>{selectedCardIds.length > 1 ? t("selectedCardCount", { count: selectedCardIds.length }) : t("cardActions")}</b>{selectedCardIds.length === 1 && contextCard && !contextCard.faceDown && hasCardRules(contextCard) && <button type="button" role="menuitem" onClick={() => { setInspectedCard(contextCard); setCanvasMenu(null); }}><BookOpenText /> {t("viewCardRule")}</button>}{selectedCardIds.length > 1 && <button type="button" role="menuitem" onClick={() => void makeSelectedPile()}><Layers3 /> {t("makeFaceDownPile")}</button>}<button type="button" role="menuitem" onClick={() => void runCardAction("flip")}><FlipHorizontal2 /> {t("flip")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("rotate-right")}><RotateCw /> {t("rotate15")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("front")}><Layers3 /> {t("bringFront")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("hand")}><Hand /> {t("moveMyHand")}</button><button type="button" role="menuitem" onClick={() => void runCardAction("discard")}><Trash2 /> {t("discard")}</button></>}
-          {canvasMenu.type === "pile" && contextPile && <><b>{pileName(contextPile.label, language)} · {t("cards", { count: contextPile.cards.length })}</b><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "draw")}><Hand /> {t("drawToHand")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "play-top")}><Eye /> {t("playTop")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "shuffle")}><Shuffle /> {t("shufflePile")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "flip")}><FlipHorizontal2 /> {t("flipPile")}</button>{selectedCardIds.length > 0 && <button type="button" role="menuitem" onClick={async () => { if (await sendAction("add-cards-to-pile", { pileId: contextPile.id, cardIds: selectedCardIds })) { setSelectedCardIds([]); setCanvasMenu(null); } }}><Plus /> {t("addSelected")}</button>}<button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "spread")}><Sparkles /> {t("spreadCards")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "discard")}><Trash2 /> {t("discardPile")}</button></>}
+          {canvasMenu.type === "deck" && <><b>{t("deckActions")} · {t("cards", { count: room?.deckCount ?? 0 })}</b><button type="button" role="menuitem" disabled={isActing || !room?.deckCount} onClick={() => void runDeckAction("draw")}><Hand /> {t("drawToHand")}</button><button type="button" role="menuitem" disabled={isActing || (room?.deckCount ?? 0) < 2} onClick={() => void runDeckAction("shuffle")}><Shuffle /> {t("shuffleDeck")}</button>{selectedReturnCardIds.length > 0 && <><button type="button" role="menuitem" disabled={isActing} onClick={() => void addSelectedCardsToDeck("top")}><ArrowUp /> {t("returnSelectedToDeck")}</button><button type="button" role="menuitem" disabled={isActing} onClick={() => void addSelectedCardsToDeck("random")}><Shuffle /> {t("returnSelectedRandomly")}</button></>}</>}
+          {canvasMenu.type === "pile" && contextPile && <><b>{pileName(contextPile.label, language)} · {t("cards", { count: contextPile.cards.length })}</b><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "draw")}><Hand /> {t("drawToHand")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "play-top")}><Eye /> {t("playTop")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "shuffle")}><Shuffle /> {t("shufflePile")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "flip")}><FlipHorizontal2 /> {t("flipPile")}</button>{selectedReturnCardIds.length > 0 && <><button type="button" role="menuitem" onClick={() => void addSelectedCardsToPile(contextPile, "top")}><ArrowUp /> {t("addSelectedToTop")}</button><button type="button" role="menuitem" onClick={() => void addSelectedCardsToPile(contextPile, "random")}><Shuffle /> {t("addSelectedRandomly")}</button></>}<button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "spread")}><Sparkles /> {t("spreadCards")}</button><button type="button" role="menuitem" onClick={() => void runPileAction(contextPile, "discard")}><Trash2 /> {t("discardPile")}</button></>}
         </div>}
 
-        <div className="activity-line" aria-live="polite"><span className={`status-pulse ${syncStatus !== "live" ? "status-muted" : ""}`} /> {pendingAction ? t("updatingTable") : room?.lastAction ? localizeServerText(room.lastAction, language) : t("loadingTable")}</div>
+        <div className="activity-line"><span className={`status-pulse ${syncStatus !== "live" ? "status-muted" : ""}`} /><span className="activity-latest" aria-live="polite">{pendingAction ? t("updatingTable") : room?.lastAction ? localizeServerText(room.lastAction, language) : t("loadingTable")}</span><button type="button" onClick={() => setLogOpen(true)} aria-label={t("openGameLog")}><ScrollText /> <span>{t("gameLog")}</span>{room?.activityLog.length ? <b>{room.activityLog.length}</b> : null}</button></div>
         {!room && !fatalError && <div className="table-loading" role="status"><LoaderCircle className="sync-spinner" /><span>{t("settingTable")}</span></div>}
       </section>
 
@@ -580,17 +700,14 @@ export default function RoomTable() {
                 <button type="button" className="max-hp-button" onClick={() => void sendAction("adjust-max-hp", { delta: 1 })} disabled={isActing || currentBoard.maxHp >= 10} aria-label={t("increaseMaxHp")}>+ {t("max")}</button>
               </div>
               <div className="status-controls">
-                <button type="button" className={currentBoard.chained ? "is-on" : ""} onClick={() => void sendAction("toggle-status", { status: "chained" })}><Link2 /> {t("chained")}</button>
                 <button type="button" className={currentBoard.faceDown ? "is-on" : ""} onClick={() => void sendAction("toggle-status", { status: "faceDown" })}><RotateCcw /> {t("faceDown")}</button>
-                <button type="button" className={room?.activePlayerId === playerId ? "is-on" : ""} onClick={() => void sendAction("set-active")}><Crown /> {t("myTurn")}</button>
               </div>
-              <BoardZones board={currentBoard} own onZoneCard={(source, card) => { setSelectedCardId(null); setSelectedZone({ source, card }); }} />
             </div>
           )}
           <Button variant="ghost" size="sm" onClick={() => router.push("/")}><LogOut /> {t("leave")}</Button>
         </div>
         <div className="hand-cards">
-          {room?.hand.map((card, index) => <CardFace key={card.id} card={card} className={`hand-card ${selectedCardId === card.id ? "is-selected" : ""}`} draggable disabled={isActing} style={{ "--hand-index": index } as React.CSSProperties} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/card-id", card.id); }} onClick={() => { setCanvasSelection(null); setSelectedZone(null); setSelectedCardId((current) => current === card.id ? null : card.id); }} />)}
+          {room?.hand.map((card, index) => <CardFace key={card.id} card={card} className={`hand-card ${selectedCardId === card.id ? "is-selected" : ""}`} draggable disabled={isActing} style={{ "--hand-index": index } as React.CSSProperties} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/card-id", card.id); }} onClick={() => { setCanvasSelection(null); setSelectedCardId((current) => current === card.id ? null : card.id); }} />)}
           {room && room.hand.length === 0 && <button type="button" className="empty-hand" onClick={() => void sendAction("draw")} disabled={!room.deckCount || isActing}><Redo2 /><span>{t("handEmpty")}</span><b>{pendingAction === "draw" ? t("drawing") : t("drawCard")}</b></button>}
         </div>
         {selectedCard && (
@@ -599,22 +716,10 @@ export default function RoomTable() {
             {hasCardRules(selectedCard) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedCard)}><BookOpenText /> {t("viewCardRule")}</Button>}
             <Button size="sm" onClick={() => void moveSelected("table")} disabled={isActing}><Hand /> {t("play")}</Button>
             <Button size="sm" variant="outline" onClick={() => void moveSelected("table", undefined, true)} disabled={isActing}><EyeOff /> {t("faceDown")}</Button>
-            {isTamQuocSat && selectedCard.cardType !== "general" && <Button size="sm" variant="outline" onClick={() => void moveSelected("equipment")} disabled={isActing}><Shield /> {t("equip")}</Button>}
-            {isTamQuocSat && selectedCard.cardType !== "general" && <Button size="sm" variant="outline" onClick={() => void moveSelected("judging")} disabled={isActing}><Sparkles /> {t("judge")}</Button>}
             <Button size="sm" variant="outline" onClick={() => void moveSelected("discard")} disabled={isActing}><Trash2 /> {t("discard")}</Button>
             {opponents.length > 0 && <Select value={giveTargetId} onValueChange={(value) => value && setGiveTargetId(value)}><SelectTrigger aria-label={t("giveTo")}><SelectValue placeholder={t("giveTo")} /></SelectTrigger><SelectContent>{opponents.map((player) => <SelectItem key={player.id} value={player.id}>{player.name}</SelectItem>)}</SelectContent></Select>}
             {giveTargetId && <Button size="sm" variant="outline" onClick={() => void moveSelected("player", giveTargetId)} disabled={isActing}>{t("give")}</Button>}
             <Button size="icon-sm" variant="ghost" onClick={() => setSelectedCardId(null)} aria-label={t("cancelSelection")}><Undo2 /></Button>
-          </div>
-        )}
-        {isTamQuocSat && selectedZone && (
-          <div className="card-action-bar" role="toolbar" aria-label={t("actionsFor", { name: selectedZone.card.name ?? selectedZone.card.rank })}>
-            <span><b>{selectedZone.card.name}</b><small>{t(selectedZone.source === "equipment" ? "equipZone" : "judgeZone")}</small></span>
-            {hasCardRules(selectedZone.card) && <Button size="sm" variant="outline" onClick={() => setInspectedCard(selectedZone.card)}><BookOpenText /> {t("viewCardRule")}</Button>}
-            <Button size="sm" onClick={async () => { if (await sendAction("move-zone-card", { source: selectedZone.source, cardId: selectedZone.card.id, destination: "hand" })) setSelectedZone(null); }}>{t("toHand")}</Button>
-            <Button size="sm" variant="outline" onClick={async () => { if (await sendAction("move-zone-card", { source: selectedZone.source, cardId: selectedZone.card.id, destination: "table" })) setSelectedZone(null); }}>{t("play")}</Button>
-            <Button size="sm" variant="outline" onClick={async () => { if (await sendAction("move-zone-card", { source: selectedZone.source, cardId: selectedZone.card.id, destination: "discard" })) setSelectedZone(null); }}><Trash2 /> {t("discard")}</Button>
-            <Button size="icon-sm" variant="ghost" onClick={() => setSelectedZone(null)} aria-label={t("cancelZone")}><Undo2 /></Button>
           </div>
         )}
       </section>
@@ -632,6 +737,32 @@ export default function RoomTable() {
             </div>
           </div>
         </DialogContent>}
+      </Dialog>
+
+      <AlertDialog open={Boolean(kickTarget)} onOpenChange={(open) => { if (!open) setKickTarget(null); }}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("kickPlayerTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("kickPlayerDescription", { name: kickTarget?.name ?? "" })}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isActing}>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={isActing} onClick={() => void kickSelectedPlayer()}>{pendingAction === "kick-player" ? <LoaderCircle className="sync-spinner" /> : <UserRoundX />} {t("kickPlayerConfirm")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={logOpen} onOpenChange={setLogOpen}>
+        <DialogContent className="game-log-dialog">
+          <DialogHeader><DialogTitle>{t("gameLog")}</DialogTitle><DialogDescription>{t("gameLogDescription")}</DialogDescription></DialogHeader>
+          <div className="game-log-list">
+            {room?.activityLog.slice().reverse().map((entry) => {
+              const actor = room.players.find((player) => player.id === entry.actorId);
+              return <article key={entry.id}><span className="game-log-marker" style={{ background: actor?.color ?? "#8b948f" }} /><div><p>{localizeServerText(entry.message, language)}</p><time dateTime={new Date(entry.createdAt).toISOString()}>{logTime.format(entry.createdAt)}</time></div></article>;
+            })}
+            {!room?.activityLog.length && <div className="game-log-empty"><ScrollText /><span>{t("noGameActivity")}</span></div>}
+          </div>
+        </DialogContent>
       </Dialog>
 
       <Dialog open={discardOpen} onOpenChange={setDiscardOpen}>
