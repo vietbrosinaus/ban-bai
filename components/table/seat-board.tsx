@@ -24,6 +24,11 @@ const ROWS: SeatSlot[][] = [
   ["judgement"],
 ];
 
+const COMPACT_ROWS: SeatSlot[][] = [
+  ["general1", "general2", "weapon", "armor"],
+  ["horsePlus", "horseMinus", "judgement"],
+];
+
 function accepts(slot: SeatSlot) {
   const allowed = SLOT_ALLOWS[slot];
   return allowed ? `chỉ nhận ${allowed.map((role) => ROLE_LABEL[role].toLowerCase()).join(" hoặc ")}` : "nhận mọi lá";
@@ -32,6 +37,7 @@ function accepts(slot: SeatSlot) {
 function SeatBoard({
   seatId,
   self = false,
+  compact = false,
   dragCardId,
   filled,
   counters,
@@ -40,13 +46,14 @@ function SeatBoard({
 }: React.ComponentProps<"div"> & {
   seatId: string;
   self?: boolean;
+  compact?: boolean;
   dragCardId?: string | null;
   filled: (slot: SeatSlot) => React.ReactNode;
   counters?: React.ReactNode;
 }) {
   return (
     <div data-slot="seat-board" className={cn("grid justify-items-center gap-1", className)} {...props}>
-      {ROWS.map((row, index) => (
+      {(compact && !self ? COMPACT_ROWS : ROWS).map((row, index) => (
         <div key={index} className="flex items-center gap-1">
           {row.map((slot) => {
             const content = filled(slot);
@@ -61,8 +68,9 @@ function SeatBoard({
                 className={cn(
                   "grid place-items-center rounded-[0.3rem] border border-dashed border-white/20 bg-black/20 transition-colors",
                   "hover:border-gilt/70 hover:bg-gilt/10",
-                  slot === "judgement" ? "h-9 w-[3rem]" : "h-9 w-[1.6rem]",
-                  self && (slot === "judgement" ? "h-12 w-[4rem]" : "h-12 w-[2.15rem]"),
+                  "h-9 w-[1.6rem]",
+                  compact && !self && "h-7 w-[1.25rem]",
+                  self && "h-12 w-[2.15rem]",
                   content && "border-solid border-white/30 bg-transparent",
                   verdict === "allow" && "border-solid border-emerald-400/80 bg-emerald-400/15",
                   verdict === "deny" && "border-solid border-red-400/60 bg-red-400/10",
@@ -74,14 +82,14 @@ function SeatBoard({
               </div>
             );
           })}
-          {row[0] === "judgement" ? (
+          {row.includes("judgement") ? (
             <div
               data-slot-seat={seatId}
               data-counter-zone=""
               title="Ô đếm"
               className={cn(
                 "flex aspect-square items-center justify-center gap-1 rounded-full border border-dashed border-white/20 bg-black/20 transition-colors hover:border-gilt/70 hover:bg-gilt/10",
-                self ? "size-12" : "size-9",
+                self ? "size-12" : compact ? "size-7" : "size-9",
               )}
             >
               {counters ?? <CircleDot className="size-3.5 text-white/30" />}

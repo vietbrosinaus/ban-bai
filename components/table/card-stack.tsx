@@ -38,7 +38,12 @@ function CardStack({
       {top ? (
         <PlayingCard cardId={top.id} faceDown={!top.faceUp && !peeking} size={size} />
       ) : (
-        <div className={cn(playingCardVariants({ size }), "grid place-items-center border-2 border-dashed border-white/25 bg-black/15 text-center text-[0.55rem] leading-tight text-white/40 shadow-[inset_0_2px_10px_rgba(0,0,0,0.35)] ring-0")}>
+        <div
+          className={cn(
+            playingCardVariants({ size }),
+            "grid place-items-center border border-white/15 bg-black/20 px-1 text-center text-[0.5rem] leading-tight text-white/35 shadow-[inset_0_0.15rem_0.6rem_rgba(0,0,0,0.45)] ring-0",
+          )}
+        >
           {label}
         </div>
       )}

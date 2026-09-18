@@ -521,6 +521,9 @@ export function viewFor(state: TableState, viewerId: string): TableView {
 }
 
 export function seatPoint(index: number, ringSize: number): Point {
-  const angle = (index / Math.max(1, ringSize)) * Math.PI * 2 + Math.PI / 2;
-  return { x: 0.5 - Math.cos(angle) * 0.38, y: 0.5 + Math.sin(angle) * 0.30 };
+  const total = Math.max(1, ringSize);
+  const angle = (index / total) * Math.PI * 2 + Math.PI / 2;
+  const tight = total > 6 ? 0.44 : 0.40;
+  const vertical = total > 6 ? 0.36 : 0.31;
+  return { x: 0.5 - Math.cos(angle) * tight, y: 0.5 + Math.sin(angle) * vertical };
 }

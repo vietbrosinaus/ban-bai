@@ -45,6 +45,7 @@ export default function TableRoom() {
   const name = typedName ?? storedName;
   const [role, setRole] = useState<"player" | "spectator">("player");
   const [busy, setBusy] = useState(false);
+  const [joinError, setJoinError] = useState("");
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(0);
 
@@ -61,10 +62,11 @@ export default function TableRoom() {
   const watchers = useMemo(() => (table?.seats ?? []).filter((seat) => seat.role === "spectator"), [table?.seats]);
 
   const ringSize = Math.max(table?.ringSize ?? 1, players.length);
-  const seatPoints = useMemo(() => {
-    const anchorIndex = players.find((seat) => seat.id === seatId)?.index ?? 0;
-    return new Map(players.map((seat) => [seat.id, seatPoint((seat.index - anchorIndex + ringSize) % ringSize, ringSize)]));
-  }, [players, ringSize, seatId]);
+  const crowded = ringSize > 6;
+  const seatPoints = useMemo(
+    () => new Map(players.map((seat) => [seat.id, seatPoint(seat.index, ringSize)])),
+    [players, ringSize],
+  );
 
   const hands = useMemo(() => {
     if (!table) return [];
@@ -86,8 +88,13 @@ export default function TableRoom() {
     event.preventDefault();
     if (!name.trim()) return;
     setBusy(true);
+    setJoinError("");
     try {
       await join(name.trim(), role);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Không vào được bàn.";
+      setJoinError(message);
+      if (message.includes("đủ")) setRole("spectator");
     } finally {
       setBusy(false);
     }
@@ -180,6 +187,7 @@ export default function TableRoom() {
                 <SeatBoard
                   seatId={seat.id}
                   self={seat.id === seatId}
+                  compact={crowded}
                   dragCardId={dragCardId}
                   counters={
                     (table?.counters ?? []).filter((counter) => counter.slotted && counter.ownerId === seat.id).length ? (
@@ -315,6 +323,11 @@ export default function TableRoom() {
           </DialogHeader>
           <form className="grid gap-3" onSubmit={submitJoin}>
             <Input value={name} onChange={(event) => setTypedName(event.target.value)} placeholder="Tên của bạn" maxLength={24} autoFocus />
+            {joinError ? (
+              <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {joinError}
+              </p>
+            ) : null}
             <ToggleGroup type="single" value={role} onValueChange={(value) => value && setRole(value as "player" | "spectator")} variant="outline" className="w-full">
               <ToggleGroupItem value="player" className="flex-1"><Users />Chơi</ToggleGroupItem>
               <ToggleGroupItem value="spectator" className="flex-1"><Eye />Xem</ToggleGroupItem>
