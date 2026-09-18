@@ -335,6 +335,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       const from = pieceOf(state, command.pieceId);
       const onto = pieceOf(state, command.ontoId);
       if (from.id === onto.id) return state;
+      if (onto.slot) guardSlot(onto.slot, from.cards);
       const merged: TablePiece = { ...onto, cards: [...onto.cards, ...from.cards] };
       const base = from.tag ? replacePiece(state.pieces, { ...from, cards: [] }) : dropPiece(state.pieces, from.id);
       return note(withPieces(state, replacePiece(base, merged)), ctx.actorId, `đặt ${pieceLabel(from)} lên ${pieceLabel(onto)}`);

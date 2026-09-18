@@ -15,7 +15,7 @@ type HandDrag = { cardId: string; pointerId: number; startX: number; startY: num
 function hitTest(clientX: number, clientY: number, ignoreId?: string): DropTarget {
   for (const element of document.elementsFromPoint(clientX, clientY)) {
     const data = (element as HTMLElement).dataset ?? {};
-    if (data.piece && data.piece !== ignoreId) return { kind: "piece", id: data.piece };
+    if (data.piece && data.piece !== ignoreId && data.slotted === undefined) return { kind: "piece", id: data.piece };
     if (data.counterZone !== undefined && data.slotSeat) return { kind: "seat", id: data.slotSeat };
     if (data.slot && data.slotSeat) return { kind: "slot", seatId: data.slotSeat, slot: data.slot as SeatSlot };
     if (data.seat) return { kind: "seat", id: data.seat };
@@ -43,6 +43,8 @@ export function useTablePointer({
   const [held, setHeld] = useState<string | null>(null);
   const [carrying, setCarrying] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const [takeCount, setTakeCount] = useState(0);
+  const [dragCardId, setDragCardId] = useState<string | null>(null);
+  const [hoverTarget, setHoverTarget] = useState<DropTarget>(null);
 
   const toFraction = useCallback((clientX: number, clientY: number): Point => {
     const felt = feltRef.current;
@@ -82,6 +84,8 @@ export function useTablePointer({
     dragRef.current = null;
     setTakeCount(0);
     setAnchor({ kind: "piece", id: drag.pieceId }, false);
+    setDragCardId(null);
+    setHoverTarget(null);
     if (!drop || !drag.moved) { setHeld(null); setLocalPositions({}); return; }
 
     const target = hitTest(event.clientX, event.clientY, drag.pieceId);
@@ -115,8 +119,10 @@ export function useTablePointer({
         drag.moved = true;
         setHeld(drag.pieceId);
         setAnchor({ kind: "piece", id: drag.pieceId }, true);
+        setDragCardId(piece.cards[piece.cards.length - 1]?.id ?? null);
         if (drag.peel && piece.cards.length > 1) setTakeCount(drag.count);
       }
+      setHoverTarget(hitTest(event.clientX, event.clientY, drag.pieceId));
       const { x, y } = toFraction(event.clientX, event.clientY);
       setLocalPositions({ [drag.pieceId]: { x: x - drag.dx, y: y - drag.dy } });
     },
@@ -140,6 +146,8 @@ export function useTablePointer({
     if (!drag || drag.pointerId !== event.pointerId) return;
     handDragRef.current = null;
     setCarrying(null);
+    setDragCardId(null);
+    setHoverTarget(null);
     if (!drop || !drag.moved) return;
 
     const target = hitTest(event.clientX, event.clientY);
@@ -165,6 +173,8 @@ export function useTablePointer({
       if (!drag || drag.pointerId !== event.pointerId) return;
       if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
       drag.moved = true;
+      setDragCardId(drag.cardId);
+      setHoverTarget(hitTest(event.clientX, event.clientY));
       setCarrying({ cardId: drag.cardId, x: event.clientX, y: event.clientY });
     },
     onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endHandDrag(event, true),
@@ -214,5 +224,5 @@ export function useTablePointer({
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event, false),
   });
 
-  return { feltProps, feltRef, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount };
+  return { feltProps, feltRef, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget };
 }

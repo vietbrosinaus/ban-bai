@@ -7,7 +7,6 @@ import { FACTION_FILL, PlayingCard } from "@/components/table/playing-card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Separator } from "@/components/ui/separator";
 import { SuitMark } from "@/components/table/suit-mark";
 import { MetaList } from "@/components/ui/meta-list";
 import { CATEGORY_LABEL, ROLE_LABEL, cardFace, cardRules } from "@/lib/domain/deck";
@@ -93,6 +92,7 @@ function CardInfoBody({ cardId }: { cardId: CardId }) {
 
 function CardInfo({ cardId, className, ...props }: React.ComponentProps<"div"> & { cardId: CardId }) {
   const card = cardFace(cardId);
+  const rules = cardRules(cardId);
   if (!card) return null;
   return (
     <div data-slot="card-info" className={cn("grid gap-4 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]", className)} {...props}>
@@ -100,15 +100,14 @@ function CardInfo({ cardId, className, ...props }: React.ComponentProps<"div"> &
       <div className="grid content-start gap-3">
         <div className="grid gap-1.5">
           <h2 className="text-xl leading-tight font-semibold">{card.name}</h2>
-          {cardRules(cardId)?.kind === "play" ? (
-            <p className="text-xs text-muted-foreground">
-              {(cardRules(cardId) as { nameEn: string }).nameEn}
-              <span className="ml-2 opacity-70">tên gốc in trên lá bài là tiếng Trung</span>
-            </p>
+          {rules?.kind === "play" ? (
+            <MetaList className="text-xs text-muted-foreground">
+              <span>{rules.nameEn}</span>
+              <span className="opacity-70">chữ trên lá bài là tiếng Trung</span>
+            </MetaList>
           ) : null}
           <CardInfoHeader cardId={cardId} />
         </div>
-        <Separator />
         <CardInfoBody cardId={cardId} />
       </div>
     </div>

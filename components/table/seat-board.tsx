@@ -5,7 +5,7 @@ import { CircleDot, Crosshair, Crown, Hourglass, Shield, ShieldPlus, Swords, typ
 
 import { SEAT_SLOT_LABEL, type SeatSlot } from "@/lib/domain/card";
 import { ROLE_LABEL } from "@/lib/domain/deck";
-import { SLOT_ALLOWS } from "@/lib/domain/table";
+import { SLOT_ALLOWS, slotAllowsCard } from "@/lib/domain/table";
 import { cn } from "@/lib/utils";
 
 const SLOT_ICON: Record<SeatSlot, LucideIcon> = {
@@ -24,10 +24,15 @@ const ROWS: SeatSlot[][] = [
   ["judgement"],
 ];
 
+function accepts(slot: SeatSlot) {
+  const allowed = SLOT_ALLOWS[slot];
+  return allowed ? `chỉ nhận ${allowed.map((role) => ROLE_LABEL[role].toLowerCase()).join(" hoặc ")}` : "nhận mọi lá";
+}
+
 function SeatBoard({
   seatId,
   self = false,
-  armed = false,
+  dragCardId,
   filled,
   counters,
   className,
@@ -35,36 +40,37 @@ function SeatBoard({
 }: React.ComponentProps<"div"> & {
   seatId: string;
   self?: boolean;
-  armed?: boolean;
+  dragCardId?: string | null;
   filled: (slot: SeatSlot) => React.ReactNode;
   counters?: React.ReactNode;
 }) {
   return (
-    <div
-      data-slot="seat-board"
-      className={cn("grid justify-items-center gap-1 rounded-xl p-1", self && "bg-black/15 ring-1 ring-gilt/25", className)}
-      {...props}
-    >
+    <div data-slot="seat-board" className={cn("grid justify-items-center gap-1", className)} {...props}>
       {ROWS.map((row, index) => (
         <div key={index} className="flex items-center gap-1">
           {row.map((slot) => {
             const content = filled(slot);
+            const verdict = dragCardId ? (slotAllowsCard(slot, dragCardId) ? "allow" : "deny") : undefined;
             return (
               <div
                 key={slot}
                 data-slot-seat={seatId}
                 data-slot={slot}
-                title={`${SEAT_SLOT_LABEL[slot]}${SLOT_ALLOWS[slot] ? `, chỉ nhận ${SLOT_ALLOWS[slot]!.map((role) => ROLE_LABEL[role].toLowerCase()).join(" hoặc ")}` : ", nhận mọi lá"}`}
+                data-verdict={verdict}
+                title={`${SEAT_SLOT_LABEL[slot]}, ${accepts(slot)}`}
                 className={cn(
                   "grid place-items-center rounded-[0.3rem] border border-dashed border-white/20 bg-black/20 transition-colors",
                   "hover:border-gilt/70 hover:bg-gilt/10",
-                  armed && "border-gilt/45",
                   slot === "judgement" ? "h-9 w-[3rem]" : "h-9 w-[1.6rem]",
                   self && (slot === "judgement" ? "h-12 w-[4rem]" : "h-12 w-[2.15rem]"),
                   content && "border-solid border-white/30 bg-transparent",
+                  verdict === "allow" && "border-solid border-emerald-400/80 bg-emerald-400/15",
+                  verdict === "deny" && "border-solid border-red-400/60 bg-red-400/10",
                 )}
               >
-                {content ?? React.createElement(SLOT_ICON[slot], { className: "size-3.5 text-white/30" })}
+                {content ?? React.createElement(SLOT_ICON[slot], {
+                  className: cn("size-3.5 text-white/30", verdict === "allow" && "text-emerald-300", verdict === "deny" && "text-red-300/70"),
+                })}
               </div>
             );
           })}
@@ -87,4 +93,4 @@ function SeatBoard({
   );
 }
 
-export { SeatBoard, ROWS as SEAT_BOARD_ROWS };
+export { SeatBoard };

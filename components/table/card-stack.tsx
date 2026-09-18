@@ -11,7 +11,7 @@ const DEPTH_LAYERS = 3;
 function CardStack({
   cards,
   label,
-  size,
+  size = "sm",
   peeking = false,
   showCount = true,
   className,

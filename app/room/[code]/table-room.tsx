@@ -38,7 +38,7 @@ export default function TableRoom() {
   const params = useParams<{ code: string }>();
   const code = String(params.code ?? "").toUpperCase();
   const { ready, seatId, table, status, pending, fatal, join, send, setAnchor } = useTable(code);
-  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount } = useTablePointer({ send, setAnchor });
+  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({ send, setAnchor });
 
   const storedName = useStoredValue("ban-bai:name");
   const [typedName, setTypedName] = useState<string | null>(null);
@@ -112,7 +112,7 @@ export default function TableRoom() {
   }
 
   return (
-    <main className="grid h-svh grid-rows-[3.25rem_minmax(0,1fr)_12.5rem] overflow-hidden bg-[#0a1713] text-[#f2ede0] select-none">
+    <main className="grid h-svh grid-rows-[3.25rem_minmax(0,1fr)_11rem] overflow-hidden bg-[#0a1713] text-[#f2ede0] select-none">
       <header className="flex items-center gap-2.5 bg-felt-deep/70 px-4 text-sm">
         <b className="text-base">Bàn Bài</b>
         <Button variant="ghost" size="sm" onClick={copyInvite} className="tracking-widest tabular-nums">
@@ -141,7 +141,7 @@ export default function TableRoom() {
         </div>
       </header>
 
-      <div className="grid min-h-0 grid-cols-1 gap-3 px-3 py-3 xl:grid-cols-[minmax(0,1fr)_17rem]">
+      <div className="grid min-h-0 grid-cols-1 gap-3 px-3 py-3 xl:grid-cols-[minmax(0,1fr)_14rem]">
         <div className="grid min-h-0 place-items-center">
         <Felt {...feltProps} className="aspect-[16/10] max-h-full w-full max-w-[min(100%,72rem)]">
           {players.map((seat) => {
@@ -180,7 +180,7 @@ export default function TableRoom() {
                 <SeatBoard
                   seatId={seat.id}
                   self={seat.id === seatId}
-                  armed={Boolean(carrying)}
+                  dragCardId={dragCardId}
                   counters={
                     (table?.counters ?? []).filter((counter) => counter.slotted && counter.ownerId === seat.id).length ? (
                       <div className="flex gap-1">
@@ -211,6 +211,7 @@ export default function TableRoom() {
                 x={at.x}
                 y={at.y}
                 held={held === piece.id}
+                shrink={held === piece.id && hoverTarget?.kind === "slot"}
                 playedBy={table?.seats.find((seat) => seat.id === piece.playedBy)}
                 pieceProps={pieceProps}
                 send={send}
@@ -276,6 +277,7 @@ export default function TableRoom() {
           <HandUtilities watching={Boolean(watching)} send={send} seatPoint={seatPoints.get(seatId) ?? { x: 0.5, y: 0.85 }} />
         </div>
         <HandTray
+          size="sm"
           cards={table?.hand ?? []}
           empty={watching ? "người xem không cầm bài" : "tay trống, rút từ chồng bài hoặc nhờ chủ bàn chia"}
           className="min-h-0 items-center pb-3"
@@ -291,8 +293,11 @@ export default function TableRoom() {
       </section>
 
       {carrying && (
-        <div className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 rotate-[-4deg]" style={{ left: carrying.x, top: carrying.y }}>
-          <PlayingCard cardId={carrying.cardId} size="sm" />
+        <div
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 rotate-[-4deg] transition-transform duration-150"
+          style={{ left: carrying.x, top: carrying.y }}
+        >
+          <PlayingCard cardId={carrying.cardId} size={hoverTarget?.kind === "slot" ? "xs" : "sm"} />
         </div>
       )}
 
@@ -339,7 +344,7 @@ function HandCard({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div {...handCardProps(cardId)} onClick={() => setInfo(true)}>
-            <PlayingCard cardId={cardId} className="transition-transform hover:-translate-y-1" />
+            <PlayingCard cardId={cardId} size="md" className="transition-transform hover:-translate-y-1" />
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
@@ -581,6 +586,7 @@ function SlotCard({
       {(open) => (
         <div
           {...pieceProps(piece)}
+          data-slotted=""
           onClick={open}
           className="relative z-0 grid h-full w-full place-items-center p-0.5 transition-transform duration-150 hover:z-30 hover:scale-[2.4]"
         >
@@ -601,6 +607,7 @@ function PieceOnTable({
   x,
   y,
   held,
+  shrink = false,
   playedBy,
   pieceProps,
   send,
@@ -609,6 +616,7 @@ function PieceOnTable({
   x: number;
   y: number;
   held: boolean;
+  shrink?: boolean;
   playedBy?: { name: string; colour: string };
   pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
   send: ReturnType<typeof useTable>["send"];
@@ -626,7 +634,12 @@ function PieceOnTable({
           onClick={open}
           className="group"
         >
-          <CardStack cards={piece.cards} label={piece.label} className="transition-transform group-hover:-translate-y-0.5" />
+          <CardStack
+            cards={piece.cards}
+            label={piece.label}
+            size={shrink ? "xs" : "sm"}
+            className="transition-transform duration-150 group-hover:-translate-y-0.5"
+          />
           {single && playedBy ? (
             <Badge
               variant="secondary"
