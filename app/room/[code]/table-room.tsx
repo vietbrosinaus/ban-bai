@@ -132,7 +132,7 @@ export default function TableRoom() {
   }
 
   return (
-    <main className="grid h-svh grid-cols-[minmax(0,1fr)] grid-rows-[3.25rem_minmax(0,1fr)_11rem] overflow-hidden bg-[#0a1713] text-[#f2ede0] select-none">
+    <main className="grid h-svh grid-cols-[minmax(0,1fr)] grid-rows-[3.25rem_minmax(0,1fr)_11rem] overflow-hidden bg-[#0a1713] text-[#f2ede0] [color-scheme:dark] select-none">
       <header className="flex items-center gap-2.5 bg-felt-deep/70 px-4 text-sm">
         <b className="text-base">Bàn Bài</b>
         <Button variant="ghost" size="sm" onClick={copyInvite} className="tracking-widest tabular-nums">
