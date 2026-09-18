@@ -8,7 +8,7 @@ import type { Point, SeatSlot } from "@/lib/domain/card";
 
 type DropTarget = { kind: "piece"; id: string } | { kind: "slot"; seatId: string; slot: SeatSlot } | { kind: "seat"; id: string } | { kind: "hand" } | { kind: "felt" } | null;
 
-type Drag = { pieceId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean; peel: boolean; count: number };
+type Drag = { pieceId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean; peel: boolean; count: number; cards: number };
 type CounterDrag = { counterId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean };
 type HandDrag = { cardId: string; pointerId: number; startX: number; startY: number; moved: boolean };
 
@@ -28,7 +28,7 @@ function hitTest(clientX: number, clientY: number, ignoreId?: string): DropTarge
 export function useTablePointer({
   send,
   setAnchor,
-  peelDefault = true,
+  peelDefault = false,
 }: {
   send: (command: Command) => Promise<unknown>;
   setAnchor: (anchor: Anchor, grabbing?: boolean) => void;
@@ -93,9 +93,10 @@ export function useTablePointer({
     const { x, y } = toFraction(clientX, clientY);
     const finish = () => { setHeld(null); setLocalPositions({}); };
 
-    if (target?.kind === "piece") void send({ type: "merge", pieceId: drag.pieceId, ontoId: target.id }).finally(finish);
+    if (target?.kind === "hand") void send({ type: "takeToHand", pieceId: drag.pieceId, count: drag.peel ? drag.count : 99 }).finally(finish);
+    else if (drag.peel && drag.count < drag.cards) void send({ type: "split", pieceId: drag.pieceId, count: drag.count, x: x - drag.dx, y: y - drag.dy }).finally(finish);
+    else if (target?.kind === "piece") void send({ type: "merge", pieceId: drag.pieceId, ontoId: target.id }).finally(finish);
     else if (target?.kind === "slot") void send({ type: "placeInSlot", pieceId: drag.pieceId, seatId: target.seatId, slot: target.slot }).finally(finish);
-    else if (target?.kind === "hand") void send({ type: "takeToHand", pieceId: drag.pieceId, count: 99 }).finally(finish);
     else void send({ type: "move", pieceId: drag.pieceId, x: x - drag.dx, y: y - drag.dy }).finally(finish);
   };
 
@@ -111,7 +112,7 @@ export function useTablePointer({
       const box = event.currentTarget.getBoundingClientRect();
       const origin = toFraction(box.left + box.width / 2, box.top + box.height / 2);
       const peel = peelDefault ? !event.shiftKey : event.shiftKey;
-      dragRef.current = { pieceId: piece.id, pointerId: event.pointerId, dx: x - origin.x, dy: y - origin.y, startX: event.clientX, startY: event.clientY, moved: false, peel, count: 1 };
+      dragRef.current = { pieceId: piece.id, pointerId: event.pointerId, dx: x - origin.x, dy: y - origin.y, startX: event.clientX, startY: event.clientY, moved: false, peel, count: 1, cards: piece.cards.length };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
