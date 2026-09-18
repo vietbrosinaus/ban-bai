@@ -37,8 +37,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check the deploy credentials exist
+        run: |
+          if [ -z "$PARTYKIT_LOGIN" ] || [ -z "$PARTYKIT_TOKEN" ]; then
+            echo "::error::PARTYKIT_LOGIN and PARTYKIT_TOKEN are not set. The repository owner creates them with 'npx partykit token generate' and adds them under Settings, Secrets and variables, Actions."
+            exit 1
+          fi
+        env:
+          PARTYKIT_LOGIN: ${{ secrets.PARTYKIT_LOGIN }}
+          PARTYKIT_TOKEN: ${{ secrets.PARTYKIT_TOKEN }}
+
       - name: Deploy
         run: npx partykit deploy
+        timeout-minutes: 5
         env:
           PARTYKIT_LOGIN: ${{ secrets.PARTYKIT_LOGIN }}
           PARTYKIT_TOKEN: ${{ secrets.PARTYKIT_TOKEN }}
