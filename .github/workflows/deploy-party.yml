@@ -6,7 +6,7 @@ on:
     paths:
       - "party/**"
       - "lib/**"
-      - "partykit.json"
+      - "wrangler.jsonc"
       - "package-lock.json"
       - ".github/workflows/deploy-party.yml"
   workflow_dispatch:
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to PartyKit
+    name: Deploy to Cloudflare
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -40,20 +40,19 @@ jobs:
       - name: Look for deploy credentials
         id: creds
         run: |
-          if [ -n "$PARTYKIT_LOGIN" ] && [ -n "$PARTYKIT_TOKEN" ]; then
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Party server not deployed. PARTYKIT_LOGIN and PARTYKIT_TOKEN are not set, so this step was skipped. The repository owner creates them with 'npx partykit token generate' and adds them under Settings, Secrets and variables, Actions."
+            echo "::notice::Party server not deployed. CLOUDFLARE_API_TOKEN is not set, so this step was skipped. The repository owner creates a token at dash.cloudflare.com with the 'Edit Cloudflare Workers' template and adds it under Settings, Secrets and variables, Actions."
           fi
         env:
-          PARTYKIT_LOGIN: ${{ secrets.PARTYKIT_LOGIN }}
-          PARTYKIT_TOKEN: ${{ secrets.PARTYKIT_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Deploy
         if: steps.creds.outputs.ready == 'true'
-        run: npx partykit deploy
+        run: npx wrangler deploy
         timeout-minutes: 5
         env:
-          PARTYKIT_LOGIN: ${{ secrets.PARTYKIT_LOGIN }}
-          PARTYKIT_TOKEN: ${{ secrets.PARTYKIT_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -9,7 +9,7 @@ A lightweight online card table for 1–10 friends. Players join with a room lin
 - Create and join rooms by link or six-character code
 - Deal, shuffle, draw, play, take back, and reset actions
 - A shared, shuffled Tướng pile whose cards draw into private hands in Tam Quốc Sát rooms
-- Live rooms over websockets, one PartyKit Durable Object per table
+- Live rooms over websockets, one Cloudflare Durable Object per table
 - Responsive desktop and mobile interface
 - WebMCP actions for reading the table, drawing, and playing cards
 
@@ -23,7 +23,7 @@ cp .env.example .env.local
 npm run dev:all
 ```
 
-`dev:all` starts two things: the party server on port 1999 and Next on port 3000. Open [http://localhost:3000](http://localhost:3000).
+`dev:all` starts two things: the party server (a real Cloudflare Worker, run locally) on port 1999 and Next on port 3000. Open [http://localhost:3000](http://localhost:3000).
 
 The party server is the same code that runs in production, just running on your machine, and your tables live in its memory. That means you can change anything under `party/` and see it immediately, and it also means your tables disappear when you stop it. Nothing you do locally can touch the deployed server.
 
@@ -53,31 +53,36 @@ app/ components/ hooks/   the UI
 
 ## Deployment
 
-Two targets. The party server holds the tables, Vercel serves the app. Both deploy from `main`, so nobody needs credentials on their own machine.
+Two targets. The party server holds the tables on Cloudflare, Vercel serves the app. Both deploy from `main`, so nobody needs credentials on their own machine.
 
 The repository owner does this once:
 
-```bash
-npx partykit login
-npx partykit token generate
-```
+1. Make a free Cloudflare account.
+2. Run `npm run deploy:party`. It opens a browser to authorise, then prints the address, `ban-bai.<account>.workers.dev`.
+3. At **dash.cloudflare.com, My Profile, API Tokens**, create a token from the **Edit Cloudflare Workers** template.
+4. Add it to GitHub under **Settings, Secrets and variables, Actions**:
 
-`token generate` prints a `PARTYKIT_LOGIN` and a `PARTYKIT_TOKEN`, and the token is shown only once. Add both as GitHub Actions secrets. From then on `.github/workflows/deploy-party.yml` deploys the party server on every push to `main` that touches `party/`, `lib/` or `partykit.json`.
+| Secret | Where it comes from |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | the token from step 3 |
+| `CLOUDFLARE_ACCOUNT_ID` | the account id shown in the Cloudflare dashboard |
 
-The app itself needs one environment variable in Vercel:
+From then on `.github/workflows/deploy-party.yml` deploys the party server on every push to `main` that touches `party/`, `lib/` or `wrangler.jsonc`. Until those secrets exist the job skips itself and the run still passes.
+
+5. In Vercel, set one environment variable and **redeploy**:
 
 | Key | Value |
 | --- | --- |
-| `NEXT_PUBLIC_PARTY_HOST` | the host the first deploy prints, `ban-bai.<owner>.partykit.dev` |
+| `NEXT_PUBLIC_PARTY_HOST` | the address from step 2, e.g. `ban-bai.bach.workers.dev` |
 
-It is read at build time, not run time, so Vercel has to rebuild after it is set.
+This one is not a secret. It ends up inside the JavaScript every visitor downloads, so it can be shared freely. It is read at build time, not run time, which is why Vercel has to rebuild after it is set.
 
 ### Who needs what
 
 | | Clone and develop | Deploy |
 | --- | --- | --- |
 | Node.js 22+ | yes | CI does it |
-| PartyKit account | **no** | owner only, once |
+| Cloudflare account | **no** | owner only, once |
 | Vercel access | **no** | owner only |
 | Database | none exists | none exists |
 

@@ -9,12 +9,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ignore-pattern .next --ignore-pattern .vercel",
+    "lint": "eslint . --ignore-pattern .next --ignore-pattern .vercel --ignore-pattern .wrangler --ignore-pattern worker-configuration.d.ts",
     "arch": "node scripts/check-architecture.mjs",
     "check": "npm run arch && tsc --noEmit && npm run lint",
-    "dev:party": "partykit dev --port 1999",
-    "dev:all": "partykit dev --port 1999 & next dev",
-    "deploy:party": "partykit deploy"
+    "dev:party": "wrangler dev",
+    "dev:all": "wrangler dev & next dev",
+    "deploy:party": "wrangler deploy",
+    "types:party": "wrangler types"
   },
   "dependencies": {
     "class-variance-authority": "0.7.1",
@@ -22,6 +23,7 @@
     "lucide-react": "^1.31.0",
     "next": "16.3.4",
     "next-themes": "^0.4.6",
+    "partyserver": "^0.5.10",
     "partysocket": "^1.3.0",
     "radix-ui": "^1.6.7",
     "react": "19.2.6",
@@ -30,16 +32,17 @@
     "tailwind-merge": "3.6.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260918.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.4",
-    "partykit": "^0.0.115",
     "tailwindcss": "4.2.1",
     "tw-animate-css": "^1.4.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "wrangler": "^4.134.0"
   },
   "type": "module"
 }

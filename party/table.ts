@@ -1,4 +1,4 @@
-import type * as Party from "partykit/server";
+import { Server, type Connection, type ConnectionContext, type WSMessage } from "partyserver";
 
 import { PRESENCE, type Hand } from "@/lib/domain/presence";
 import { newTable, type TableDeck } from "@/lib/domain/setup";
@@ -10,6 +10,8 @@ import { webCryptoRandomness } from "@/lib/adapters/web-crypto-randomness";
 
 const STATE_KEY = "table";
 
+type SeatState = { seatId: string };
+
 function cleanName(value: unknown) {
   return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 24);
 }
@@ -18,17 +20,19 @@ function reply(body: DoorReply, status: number) {
   return Response.json(body, { status, headers: { "access-control-allow-origin": "*" } });
 }
 
-export default class Table implements Party.Server {
+function seatOfConnection(connection: Connection) {
+  return (connection.state as SeatState | null)?.seatId ?? "";
+}
+
+export class Table extends Server {
   state: TableState | null = null;
   hands = new Map<string, Hand>();
 
-  constructor(readonly room: Party.Room) {}
-
   async onStart() {
-    this.state = (await this.room.storage.get<TableState>(STATE_KEY)) ?? null;
+    this.state = (await this.ctx.storage.get<TableState>(STATE_KEY)) ?? null;
   }
 
-  async onRequest(request: Party.Request) {
+  async onRequest(request: Request) {
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -57,7 +61,7 @@ export default class Table implements Party.Server {
         if (this.state) return reply({ error: "Bàn này đã có rồi." }, 409);
         const hostId = webCryptoRandomness.id();
         const deck: TableDeck = body.deck === "classic-52" ? "classic-52" : "tam-quoc-sat";
-        const fresh = newTable(this.room.id, hostId, { shuffle: webCryptoRandomness.shuffle }, deck);
+        const fresh = newTable(this.name, hostId, { shuffle: webCryptoRandomness.shuffle }, deck);
         await this.commit(this.seat(fresh, hostId, name, "player"));
         return reply({ seatId: hostId }, 201);
       }
@@ -76,9 +80,9 @@ export default class Table implements Party.Server {
     }
   }
 
-  onConnect(connection: Party.Connection, context: Party.ConnectionContext) {
+  onConnect(connection: Connection, context: ConnectionContext) {
     const seatId = new URL(context.request.url).searchParams.get("seatId") ?? "";
-    connection.setState({ seatId });
+    connection.setState({ seatId } satisfies SeatState);
 
     if (!this.state) {
       this.say(connection, { t: "gone", message: "Bàn này không tồn tại." });
@@ -87,9 +91,9 @@ export default class Table implements Party.Server {
     this.say(connection, { t: "snapshot", snapshot: this.snapshotFor(seatId) });
   }
 
-  onMessage(raw: string, connection: Party.Connection) {
-    const seatId = (connection.state as { seatId?: string } | null)?.seatId ?? "";
-    if (!this.state || !seatId) return;
+  onMessage(connection: Connection, raw: WSMessage) {
+    const seatId = seatOfConnection(connection);
+    if (!this.state || !seatId || typeof raw !== "string") return;
 
     let message: ClientMessage;
     try {
@@ -116,7 +120,7 @@ export default class Table implements Party.Server {
       this.state = next;
       this.pushTable();
       this.say(connection, { t: "ack", nonce: message.nonce });
-      void this.room.storage.put(STATE_KEY, next);
+      void this.ctx.storage.put(STATE_KEY, next);
     } catch (error) {
       const text = error instanceof RuleError ? error.message : "Nước đi không thành.";
       this.say(connection, { t: "reject", nonce: message.nonce, message: text });
@@ -124,21 +128,21 @@ export default class Table implements Party.Server {
     }
   }
 
-  onClose(connection: Party.Connection) {
-    const seatId = (connection.state as { seatId?: string } | null)?.seatId ?? "";
-    if (!seatId || this.stillHere(seatId)) return;
+  onClose(connection: Connection) {
+    const seatId = seatOfConnection(connection);
+    if (!seatId || this.stillHere(seatId, connection)) return;
     this.hands.delete(seatId);
     this.pushHands();
   }
 
-  onError(connection: Party.Connection) {
+  onError(connection: Connection) {
     this.onClose(connection);
   }
 
-  private stillHere(seatId: string) {
-    for (const open of this.room.getConnections()) {
-      if (open.readyState !== 1) continue;
-      if ((open.state as { seatId?: string } | null)?.seatId === seatId) return true;
+  private stillHere(seatId: string, leaving: Connection) {
+    for (const open of this.getConnections()) {
+      if (open.id === leaving.id) continue;
+      if (seatOfConnection(open) === seatId) return true;
     }
     return false;
   }
@@ -153,7 +157,7 @@ export default class Table implements Party.Server {
 
   private async commit(next: TableState) {
     this.state = next;
-    await this.room.storage.put(STATE_KEY, next);
+    await this.ctx.storage.put(STATE_KEY, next);
   }
 
   private liveHands() {
@@ -165,19 +169,17 @@ export default class Table implements Party.Server {
     return { ...viewFor(this.state as TableState, seatId), liveHands: this.liveHands() };
   }
 
-  private say(connection: Party.Connection, message: ServerMessage) {
+  private say(connection: Connection, message: ServerMessage) {
     connection.send(JSON.stringify(message));
   }
 
   private pushTable() {
-    for (const connection of this.room.getConnections()) {
-      const seatId = (connection.state as { seatId?: string } | null)?.seatId ?? "";
-      this.say(connection, { t: "snapshot", snapshot: this.snapshotFor(seatId) });
+    for (const connection of this.getConnections()) {
+      this.say(connection, { t: "snapshot", snapshot: this.snapshotFor(seatOfConnection(connection)) });
     }
   }
 
   private pushHands() {
-    const hands = this.liveHands();
-    this.room.broadcast(JSON.stringify({ t: "hands", hands } satisfies ServerMessage));
+    this.broadcast(JSON.stringify({ t: "hands", hands: this.liveHands() } satisfies ServerMessage));
   }
 }

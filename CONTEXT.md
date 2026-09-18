@@ -10,7 +10,7 @@ Dependencies point inward only. `npm run arch` enforces this and fails the build
 lib/domain/    pure. No clock, no randomness, no network, no env, no React.
 lib/ports/     the interfaces an adapter must satisfy.
 lib/adapters/  concrete implementations of ports.
-party/         the driving adapter that owns the table: one Durable Object per room.
+party/         the driving adapter that owns the table: one Cloudflare Durable Object per room.
 app/ components/ hooks/   the driving adapter that renders it.
 ```
 
@@ -31,7 +31,7 @@ Domain purity is checked by pattern: `Date.now`, `Math.random`, `crypto`, `fetch
 | `Clock` | `systemClock` |
 | `Randomness` | `webCryptoRandomness` |
 
-The room itself needs no repository port. A Durable Object *is* the single authoritative holder of one table, so `party/table.ts` keeps `TableState` in memory and mirrors it to the object's own storage. There is no database.
+The room itself needs no repository port. A Durable Object *is* the single authoritative holder of one table, so `party/table.ts` keeps `TableState` in memory and mirrors it to the object's own SQLite storage. There is no database. The class extends `Server` from `partyserver`, and `wrangler.jsonc` binds it as `Table`, which is why room URLs read `/parties/table/<code>`.
 
 ## Transport
 

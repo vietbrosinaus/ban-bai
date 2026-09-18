@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { PRESENCE } from "@/lib/domain/presence";
 import { cn } from "@/lib/utils";
 
 const OPEN = (
@@ -29,6 +30,7 @@ function PlayerCursor({
   grabbing = false,
   self = false,
   className,
+  style,
   ...props
 }: React.ComponentProps<"div"> & {
   x: number;
@@ -42,13 +44,19 @@ function PlayerCursor({
     <div
       data-slot="player-cursor"
       data-grabbing={grabbing || undefined}
+      {...props}
       className={cn(
         "pointer-events-none absolute z-50 -translate-x-1 -translate-y-0.5",
-        !self && "transition-[left,top] duration-100 ease-linear",
+        !self && "ease-out [transition-property:left,top]",
         className
       )}
-      style={{ left: `${x * 100}%`, top: `${y * 100}%`, color: colour }}
-      {...props}
+      style={{
+        left: `${x * 100}%`,
+        top: `${y * 100}%`,
+        color: colour,
+        transitionDuration: self ? undefined : `${PRESENCE.glideMs}ms`,
+        ...style,
+      }}
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="size-7 drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)]" aria-hidden>
         {grabbing ? CLOSED : OPEN}
