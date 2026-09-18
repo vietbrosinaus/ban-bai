@@ -31,11 +31,26 @@ export type Piece = Point & {
   label?: string;
 };
 
+export const SEAT_SLOTS = ["general1", "general2", "weapon", "armor", "horsePlus", "horseMinus", "judgement"] as const;
+
+export type SeatSlot = (typeof SEAT_SLOTS)[number];
+
+export const SEAT_SLOT_LABEL: Record<SeatSlot, string> = {
+  general1: "Tướng 1",
+  general2: "Tướng 2",
+  weapon: "Vũ khí",
+  armor: "Phòng cụ",
+  horsePlus: "Ngựa +1",
+  horseMinus: "Ngựa -1",
+  judgement: "Phán xét",
+};
+
 export type Counter = Point & {
   id: string;
   label: string;
   value: number;
   ownerId?: string;
+  slotted?: boolean;
 };
 
 export type SeatRole = "player" | "spectator";

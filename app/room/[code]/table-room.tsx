@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, Eye, Layers, LoaderCircle, Users, Wifi, WifiOff } from "lucide-react";
+import { BookOpenText, Check, CircleDot, Copy, Eye, Layers, LoaderCircle, Minus, PenLine, Plus, Trash2, Users, Wifi, WifiOff } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
@@ -13,6 +13,7 @@ import { HandTray } from "@/components/table/hand-tray";
 import { PlayerCursor } from "@/components/table/player-cursor";
 import { PlayingCard } from "@/components/table/playing-card";
 import { SeatBadge } from "@/components/table/seat-badge";
+import { SeatBoard } from "@/components/table/seat-board";
 import { TablePiece } from "@/components/table/table-piece";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,11 +27,12 @@ import { useStoredValue } from "@/hooks/use-hydrated";
 import { useTable } from "@/hooks/use-table";
 import { useTablePointer } from "@/hooks/use-table-pointer";
 import { placeHands } from "@/lib/domain/presence";
-import { pieceLabel, seatDistance, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
 import { cn } from "@/lib/utils";
+import { pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
 
 import { PIECE_MENU } from "./piece-menu";
-import { TableControls } from "./table-controls";
+import { HandUtilities } from "./table-controls";
+import { ClearVoteBanner, TableMenu } from "./table-menu";
 
 export default function TableRoom() {
   const params = useParams<{ code: string }>();
@@ -117,23 +119,25 @@ export default function TableRoom() {
           {copied ? <Check /> : <Copy />}{code}
         </Button>
         <div className="ml-auto flex items-center gap-4">
-          {table?.seats.filter((seat) => seat.role === "player").map((seat) => (
-            <MetaList key={seat.id} className="text-xs">
-              <span style={{ color: seat.colour }}>{seat.name}</span>
-              <span className="text-white/50">{table?.handCounts[seat.id] ?? 0}</span>
-            </MetaList>
-          ))}
           {watchers.length > 0 && (
             <MetaList className="text-xs text-white/45">
               <Eye className="size-3.5" />
-              <span>{watchers.map((seat) => seat.name).join(", ")}</span>
+              <span>{watchers.length} đang xem</span>
             </MetaList>
           )}
           <Badge variant="outline" className="gap-1.5 border-white/15 text-white/60">
             {status === "live" ? <Wifi className="text-emerald-400" /> : status === "offline" ? <WifiOff className="text-red-400" /> : <LoaderCircle className="animate-spin" />}
             {status === "live" ? "trực tiếp" : status === "offline" ? "mất mạng" : "đang nối"}
           </Badge>
+          {table?.isHost ? <Badge variant="secondary" className="text-[0.6rem]">chủ bàn</Badge> : null}
           <Button variant="secondary" size="sm" onClick={copyInvite}><Users />Mời bạn</Button>
+          <TableMenu
+            isHost={Boolean(table?.isHost)}
+            watching={Boolean(watching)}
+            canDeal={Boolean(table?.pieces.some((piece) => piece.tag === "deck" && piece.cards.length))}
+            seatId={seatId}
+            send={send}
+          />
         </div>
       </header>
 
@@ -142,11 +146,15 @@ export default function TableRoom() {
         <Felt {...feltProps} className="aspect-[16/10] max-h-full w-full max-w-[min(100%,72rem)]">
           {players.map((seat) => {
             const point = seatPoints.get(seat.id) ?? { x: 0.5, y: 0.5 };
+            const below = point.y > 0.5;
             return (
               <div
                 key={seat.id}
                 data-seat={seat.id}
-                className="absolute -translate-x-1/2 -translate-y-1/2 rounded-2xl transition-transform hover:scale-[1.04]"
+                className={cn(
+                  "absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-2xl transition-shadow hover:drop-shadow-[0_0_0.6rem_rgba(244,201,93,0.35)]",
+                  below && "flex-col-reverse",
+                )}
                 style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
               >
                 <SeatBadge
@@ -154,32 +162,49 @@ export default function TableRoom() {
                   colour={seat.colour}
                   handCount={table?.handCounts[seat.id] ?? 0}
                   seatNumber={seat.index + 1}
-                  distance={mySeat && mySeat.role === "player" && seat.id !== seatId ? seatDistance(mySeat.index, seat.index, ringSize) : undefined}
                   self={seat.id === seatId}
+                />
+                <SeatBoard
+                  seatId={seat.id}
+                  self={seat.id === seatId}
+                  filled={(slot) => {
+                    const piece = table?.pieces.find((item) => item.ownerId === seat.id && item.slot === slot);
+                    if (!piece || !piece.cards.length) return null;
+                    const top = piece.cards[piece.cards.length - 1];
+                    return (
+                      <div {...pieceProps(piece)} className="relative">
+                        <PlayingCard cardId={top.id} faceDown={!top.faceUp} size="xs" className="w-full" />
+                        {piece.cards.length > 1 && (
+                          <Badge variant="destructive" className="absolute -top-1.5 -right-1.5 h-4 min-w-4 justify-center px-1 text-[0.5rem] tabular-nums">
+                            {piece.cards.length}
+                          </Badge>
+                        )}
+                      </div>
+                    );
+                  }}
                 />
               </div>
             );
           })}
 
-          {table?.pieces.map((piece) => {
+          {table?.pieces.filter((piece) => !piece.slot).map((piece) => {
             const at = localPositions[piece.id] ?? { x: piece.x, y: piece.y };
-            return <PieceOnTable key={piece.id} piece={piece} x={at.x} y={at.y} held={held === piece.id} pieceProps={pieceProps} send={send} />;
+            return (
+              <PieceOnTable
+                key={piece.id}
+                piece={piece}
+                x={at.x}
+                y={at.y}
+                held={held === piece.id}
+                playedBy={table?.seats.find((seat) => seat.id === piece.playedBy)}
+                pieceProps={pieceProps}
+                send={send}
+              />
+            );
           })}
 
           {table?.counters.map((counter) => (
-            <TablePiece
-              key={counter.id}
-              x={counter.x}
-              y={counter.y}
-              onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
-              onContextMenu={(event) => { event.preventDefault(); void send({ type: "removeCounter", counterId: counter.id }); }}
-            >
-              <CounterChip
-                label={counter.label}
-                value={counter.value}
-                onClick={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}
-              />
-            </TablePiece>
+            <CounterOnTable key={counter.id} counter={counter} seats={players} mySeatId={seatId} send={send} />
           ))}
 
           {hands.map((hand) => (
@@ -193,6 +218,9 @@ export default function TableRoom() {
               style={{ opacity: hand.opacity }}
             />
           ))}
+          {table?.clearVote && table.clearVote.expiresAt > now ? (
+            <ClearVoteBanner vote={table.clearVote} players={players.length} seatId={seatId} seats={table.seats} send={send} />
+          ) : null}
         </Felt>
         </div>
 
@@ -220,22 +248,19 @@ export default function TableRoom() {
             {watching ? <span className="text-white/40">ghế xem không cầm bài</span> : <span className="tabular-nums">{table?.hand.length ?? 0}</span>}
             {watching ? null : <span className="text-white/40">kéo lên bàn để đánh, giữ Shift để úp</span>}
           </MetaList>
-          <TableControls
-            isHost={Boolean(table?.isHost)}
-            watching={Boolean(watching)}
-            canDeal={Boolean(table?.pieces.some((piece) => piece.tag === "deck" && piece.cards.length))}
-            send={send}
-            seatPoint={seatPoints.get(seatId) ?? { x: 0.5, y: 0.85 }}
-          />
+          <HandUtilities watching={Boolean(watching)} send={send} seatPoint={seatPoints.get(seatId) ?? { x: 0.5, y: 0.85 }} />
         </div>
         <HandTray
           cards={table?.hand ?? []}
           empty={watching ? "người xem không cầm bài" : "tay trống, rút từ chồng bài hoặc nhờ chủ bàn chia"}
           className="min-h-0 items-center pb-3"
           renderCard={(card) => (
-            <CardInfoDialog cardId={card.id}>
-              <div {...handCardProps(card.id)}><PlayingCard cardId={card.id} /></div>
-            </CardInfoDialog>
+            <HandCard
+              cardId={card.id}
+              others={(table?.seats ?? []).filter((seat) => seat.role === "player" && seat.id !== seatId)}
+              handCardProps={handCardProps}
+              send={send}
+            />
           )}
         />
       </section>
@@ -272,11 +297,126 @@ export default function TableRoom() {
   );
 }
 
+function HandCard({
+  cardId,
+  others,
+  handCardProps,
+  send,
+}: {
+  cardId: string;
+  others: Array<{ id: string; name: string; colour: string }>;
+  handCardProps: ReturnType<typeof useTablePointer>["handCardProps"];
+  send: ReturnType<typeof useTable>["send"];
+}) {
+  const [info, setInfo] = useState(false);
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div {...handCardProps(cardId)} onClick={() => setInfo(true)}>
+            <PlayingCard cardId={cardId} className="transition-transform hover:-translate-y-1" />
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-48">
+          <ContextMenuItem onSelect={() => setInfo(true)}>
+            <BookOpenText />
+            Xem luật
+            <ContextMenuShortcut>Nháy chuột</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuLabel className="text-[0.65rem]">Đưa cho</ContextMenuLabel>
+          {others.length ? (
+            others.map((seat) => (
+              <ContextMenuItem key={seat.id} onSelect={() => void send({ type: "giveToSeat", cardId, seatId: seat.id })}>
+                <Dot tone="solid" size="md" style={{ color: seat.colour }} />
+                {seat.name}
+              </ContextMenuItem>
+            ))
+          ) : (
+            <ContextMenuItem disabled>Chưa có ai khác</ContextMenuItem>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
+      <CardInfoDialog cardId={cardId} open={info} onOpenChange={setInfo} />
+    </>
+  );
+}
+
+function CounterOnTable({
+  counter,
+  seats,
+  mySeatId,
+  send,
+}: {
+  counter: { id: string; label: string; value: number; x: number; y: number };
+  seats: Array<{ id: string; name: string; colour: string }>;
+  mySeatId: string;
+  send: ReturnType<typeof useTable>["send"];
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const [label, setLabel] = useState(counter.label);
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <TablePiece
+            x={counter.x}
+            y={counter.y}
+            onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
+          >
+            <CounterChip
+              label={counter.label}
+              value={counter.value}
+              onClick={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}
+            />
+          </TablePiece>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-48">
+          <ContextMenuLabel className="flex items-center gap-2"><CircleDot className="size-3.5" />{counter.label}<Dot />{counter.value}</ContextMenuLabel>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}><Plus />Tăng 1<ContextMenuShortcut>Nháy chuột</ContextMenuShortcut></ContextMenuItem>
+          <ContextMenuItem onSelect={() => void send({ type: "adjustCounter", counterId: counter.id, delta: -1 })}><Minus />Giảm 1<ContextMenuShortcut>Lăn chuột</ContextMenuShortcut></ContextMenuItem>
+          <ContextMenuItem onSelect={() => setRenaming(true)}><PenLine />Đổi tên</ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuLabel className="text-[0.65rem]">Gắn vào ghế</ContextMenuLabel>
+          {seats.map((seat) => (
+            <ContextMenuItem key={seat.id} onSelect={() => void send({ type: "slotCounter", counterId: counter.id, seatId: seat.id })}>
+              <Dot tone="solid" size="md" style={{ color: seat.colour }} />
+              {seat.id === mySeatId ? `${seat.name} (bạn)` : seat.name}
+            </ContextMenuItem>
+          ))}
+          <ContextMenuSeparator />
+          <ContextMenuItem variant="destructive" onSelect={() => void send({ type: "removeCounter", counterId: counter.id })}><Trash2 />Bỏ đi</ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+      <Dialog open={renaming} onOpenChange={setRenaming}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Đổi tên ô đếm</DialogTitle>
+            <DialogDescription>Tên ngắn, ví dụ máu, vàng, lượt.</DialogDescription>
+          </DialogHeader>
+          <form
+            className="grid gap-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (await send({ type: "renameCounter", counterId: counter.id, label })) setRenaming(false);
+            }}
+          >
+            <Input value={label} onChange={(event) => setLabel(event.target.value)} maxLength={12} autoFocus />
+            <Button type="submit">Đổi tên</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function PieceOnTable({
   piece,
   x,
   y,
   held,
+  playedBy,
   pieceProps,
   send,
 }: {
@@ -284,33 +424,69 @@ function PieceOnTable({
   x: number;
   y: number;
   held: boolean;
+  playedBy?: { name: string; colour: string };
   pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
   send: ReturnType<typeof useTable>["send"];
 }) {
+  const [info, setInfo] = useState(false);
   const items = PIECE_MENU.filter((item) => item.when(piece));
+  const top = piece.cards[piece.cards.length - 1];
+  const readable = top?.faceUp ? top.id : undefined;
+  const single = piece.cards.length === 1 && !piece.tag;
+
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <TablePiece x={x} y={y} rotation={piece.rotation} held={held} {...pieceProps(piece)}>
-          <CardStack cards={piece.cards} label={piece.label} />
-        </TablePiece>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="w-52">
-        <ContextMenuLabel className={cn("flex items-center gap-2")}>
-          <Layers className="size-3.5" />
-          {pieceLabel(piece)}
-          <Dot />
-          {piece.cards.length}
-        </ContextMenuLabel>
-        <ContextMenuSeparator />
-        {items.map((item) => (
-          <ContextMenuItem key={item.key} onSelect={() => void send(item.command(piece))}>
-            <item.icon />
-            {item.label}
-            {item.gesture ? <ContextMenuShortcut>{item.gesture}</ContextMenuShortcut> : null}
-          </ContextMenuItem>
-        ))}
-      </ContextMenuContent>
-    </ContextMenu>
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <TablePiece
+            x={x}
+            y={y}
+            rotation={piece.rotation}
+            held={held}
+            {...pieceProps(piece)}
+            onClick={() => { if (readable) setInfo(true); }}
+            className="group"
+          >
+            <CardStack cards={piece.cards} label={piece.label} className="transition-transform group-hover:-translate-y-0.5" />
+            {single && playedBy ? (
+              <Badge
+                variant="secondary"
+                className="absolute top-full left-1/2 mt-1.5 -translate-x-1/2 border border-white/10 bg-felt-deep/85 text-[0.5rem] whitespace-nowrap"
+                style={{ color: playedBy.colour }}
+              >
+                {playedBy.name}
+              </Badge>
+            ) : null}
+          </TablePiece>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-52">
+          <ContextMenuLabel className="flex items-center gap-2">
+            <Layers className="size-3.5" />
+            {pieceLabel(piece)}
+            <Dot />
+            {piece.cards.length}
+          </ContextMenuLabel>
+          <ContextMenuSeparator />
+          {readable ? (
+            <>
+              <ContextMenuItem onSelect={() => setInfo(true)}>
+                <BookOpenText />
+                Xem luật
+                <ContextMenuShortcut>Nháy chuột</ContextMenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          ) : null}
+          {items.map((item) => (
+            <ContextMenuItem key={item.key} onSelect={() => void send(item.command(piece))}>
+              <item.icon />
+              {item.label}
+              {item.gesture ? <ContextMenuShortcut>{item.gesture}</ContextMenuShortcut> : null}
+            </ContextMenuItem>
+          ))}
+        </ContextMenuContent>
+      </ContextMenu>
+      {readable ? <CardInfoDialog cardId={readable} open={info} onOpenChange={setInfo} /> : null}
+    </>
   );
 }

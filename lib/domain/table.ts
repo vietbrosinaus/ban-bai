@@ -1,4 +1,4 @@
-import type { CardId, CardRef, Counter, Piece, Point, Seat, SeatRole } from "./card";
+import type { CardId, CardRef, Counter, Piece, Point, Seat, SeatRole, SeatSlot } from "./card";
 import { starterPieces, type TableDeck } from "./setup";
 
 export type PieceTag = "generals" | "deck" | "discard" | "seat";
@@ -6,8 +6,17 @@ export type PieceTag = "generals" | "deck" | "discard" | "seat";
 export type TablePiece = Piece & {
   tag?: PieceTag;
   ownerId?: string;
-  spread?: boolean;
+  slot?: SeatSlot;
+  playedBy?: string;
 };
+
+export type ClearVote = {
+  proposedBy: string;
+  agreedBy: string[];
+  expiresAt: number;
+};
+
+export const CLEAR_VOTE_MS = 30_000;
 
 export type LogEntry = {
   id: number;
@@ -24,6 +33,7 @@ export type TableState = {
   pieces: TablePiece[];
   hands: Record<string, CardRef[]>;
   counters: Counter[];
+  clearVote?: ClearVote;
   revision: number;
   log: LogEntry[];
 };
@@ -48,6 +58,14 @@ export type Command =
   | { type: "adjustCounter"; counterId: string; delta: number }
   | { type: "removeCounter"; counterId: string }
   | { type: "dealToAll"; count: number }
+  | { type: "placeInSlot"; pieceId: string; seatId: string; slot: SeatSlot }
+  | { type: "playToSlot"; cardId: CardId; seatId: string; slot: SeatSlot; faceUp: boolean }
+  | { type: "releaseSlot"; pieceId: string; x: number; y: number }
+  | { type: "slotCounter"; counterId: string; seatId: string }
+  | { type: "renameCounter"; counterId: string; label: string }
+  | { type: "proposeClear" }
+  | { type: "agreeClear" }
+  | { type: "cancelClear" }
   | { type: "gather" }
   | { type: "compactRing" }
   | { type: "reset" };
@@ -162,7 +180,83 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
 
     case "move": {
       const piece = pieceOf(state, command.pieceId);
-      return withPieces(state, replacePiece(state.pieces, { ...piece, x: clamp(command.x), y: clamp(command.y) }));
+      const freed = { ...piece, x: clamp(command.x), y: clamp(command.y), ownerId: undefined, slot: undefined };
+      return withPieces(state, replacePiece(state.pieces, freed));
+    }
+
+    case "placeInSlot": {
+      const piece = pieceOf(state, command.pieceId);
+      const seat = seatOf(state, command.seatId);
+      const occupant = state.pieces.find((item) => item.ownerId === seat.id && item.slot === command.slot && item.id !== piece.id);
+      if (occupant && command.slot !== "judgement") {
+        const merged = { ...occupant, cards: [...occupant.cards, ...piece.cards] };
+        return note(withPieces(state, replacePiece(dropPiece(state.pieces, piece.id), merged)), ctx.actorId, `đặt bài vào ${SEAT_SLOT_TEXT[command.slot]} của ${seat.name}`);
+      }
+      if (occupant) {
+        const merged = { ...occupant, cards: [...occupant.cards, ...piece.cards] };
+        return note(withPieces(state, replacePiece(dropPiece(state.pieces, piece.id), merged)), ctx.actorId, `đặt bài vào ${SEAT_SLOT_TEXT.judgement} của ${seat.name}`);
+      }
+      const placed = { ...piece, ownerId: seat.id, slot: command.slot, rotation: 0 };
+      return note(withPieces(state, replacePiece(state.pieces, placed)), ctx.actorId, `đặt bài vào ${SEAT_SLOT_TEXT[command.slot]} của ${seat.name}`);
+    }
+
+    case "playToSlot": {
+      const hand = state.hands[ctx.actorId] ?? [];
+      const card = hand.find((item) => item.id === command.cardId);
+      if (!card) throw new RuleError("Lá đó không có trên tay bạn.", 409);
+      const seat = seatOf(state, command.seatId);
+      const hands = { ...state.hands, [ctx.actorId]: hand.filter((item) => item.id !== card.id) };
+      const occupant = state.pieces.find((item) => item.ownerId === seat.id && item.slot === command.slot);
+      const pieces = occupant
+        ? replacePiece(state.pieces, { ...occupant, cards: [...occupant.cards, { id: card.id, faceUp: command.faceUp }] })
+        : [...state.pieces, { id: ctx.id(), x: 0.5, y: 0.5, rotation: 0, ownerId: seat.id, slot: command.slot, playedBy: ctx.actorId, cards: [{ id: card.id, faceUp: command.faceUp }] }];
+      return note({ ...withPieces(state, pieces), hands }, ctx.actorId, `đặt bài vào ${SEAT_SLOT_TEXT[command.slot]} của ${seat.name}`);
+    }
+
+    case "releaseSlot": {
+      const piece = pieceOf(state, command.pieceId);
+      const freed = { ...piece, ownerId: undefined, slot: undefined, x: clamp(command.x), y: clamp(command.y) };
+      return withPieces(state, replacePiece(state.pieces, freed));
+    }
+
+    case "slotCounter": {
+      const seat = seatOf(state, command.seatId);
+      return {
+        ...state,
+        counters: state.counters.map((counter) => (counter.id === command.counterId ? { ...counter, ownerId: seat.id, slotted: true } : counter)),
+      };
+    }
+
+    case "renameCounter": {
+      return {
+        ...state,
+        counters: state.counters.map((counter) => (counter.id === command.counterId ? { ...counter, label: command.label.slice(0, 12) } : counter)),
+      };
+    }
+
+    case "proposeClear": {
+      seatOf(state, ctx.actorId);
+      return note({ ...state, clearVote: { proposedBy: ctx.actorId, agreedBy: [ctx.actorId], expiresAt: ctx.now + CLEAR_VOTE_MS } }, ctx.actorId, "đề nghị dọn bàn");
+    }
+
+    case "agreeClear": {
+      const vote = state.clearVote;
+      if (!vote || vote.expiresAt < ctx.now) throw new RuleError("Không có đề nghị dọn bàn nào.", 409);
+      seatOf(state, ctx.actorId);
+      const agreedBy = vote.agreedBy.includes(ctx.actorId) ? vote.agreedBy : [...vote.agreedBy, ctx.actorId];
+      const players = state.seats.filter((seat) => seat.role === "player").length;
+      if (agreedBy.length * 2 < players) {
+        return note({ ...state, clearVote: { ...vote, agreedBy } }, ctx.actorId, "đồng ý dọn bàn");
+      }
+      const swept = state.pieces.filter((piece) => Boolean(piece.tag));
+      const deck = swept.find((piece) => piece.tag === "deck");
+      const loose = state.pieces.filter((piece) => !piece.tag).flatMap((piece) => piece.cards).map((card) => ({ ...card, faceUp: false }));
+      const pieces = deck ? swept.map((piece) => (piece.id === deck.id ? { ...piece, cards: [...piece.cards, ...loose] } : piece)) : swept;
+      return note({ ...withPieces(state, pieces), clearVote: undefined }, ctx.actorId, "cả bàn đồng ý, bàn đã được dọn");
+    }
+
+    case "cancelClear": {
+      return { ...state, clearVote: undefined };
     }
 
     case "lift": {
@@ -217,7 +311,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       if (count >= piece.cards.length && !piece.tag) return route(state, { type: "move", pieceId: piece.id, x: command.x, y: command.y }, ctx);
       const taken = piece.cards.slice(-count);
       const rest = piece.cards.slice(0, piece.cards.length - count);
-      const born: TablePiece = { id: ctx.id(), x: clamp(command.x), y: clamp(command.y), rotation: piece.rotation, cards: taken };
+      const born: TablePiece = { id: ctx.id(), x: clamp(command.x), y: clamp(command.y), rotation: piece.rotation, playedBy: ctx.actorId, cards: taken };
       return note(withPieces(state, [...replacePiece(state.pieces, { ...piece, cards: rest }), born]), ctx.actorId, `lấy ${countLabel(count)} từ ${pieceLabel(piece)}`);
     }
 
@@ -246,7 +340,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       const hand = state.hands[ctx.actorId] ?? [];
       const card = hand.find((item) => item.id === command.cardId);
       if (!card) throw new RuleError("That card is not in your hand.", 409);
-      const born: TablePiece = { id: ctx.id(), x: clamp(command.x), y: clamp(command.y), rotation: 0, cards: [{ id: card.id, faceUp: command.faceUp }] };
+      const born: TablePiece = { id: ctx.id(), x: clamp(command.x), y: clamp(command.y), rotation: 0, playedBy: ctx.actorId, cards: [{ id: card.id, faceUp: command.faceUp }] };
       const hands = { ...state.hands, [ctx.actorId]: hand.filter((item) => item.id !== card.id) };
       return note({ ...withPieces(state, [...state.pieces, born]), hands }, ctx.actorId, command.faceUp ? "đánh một lá ngửa" : "đánh một lá úp");
     }
@@ -321,6 +415,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
         pieces: starterPieces(ctx, state.deck),
         hands: Object.fromEntries(state.seats.filter((seat) => seat.role === "player").map((seat) => [seat.id, []])),
         counters: [],
+        clearVote: undefined,
       }, ctx.actorId, "dọn bàn và chia lại");
     }
 
@@ -330,6 +425,16 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
 }
 
 export const MAX_PLAYERS = 10;
+
+const SEAT_SLOT_TEXT: Record<SeatSlot, string> = {
+  general1: "tướng 1",
+  general2: "tướng 2",
+  weapon: "vũ khí",
+  armor: "phòng cụ",
+  horsePlus: "ngựa +1",
+  horseMinus: "ngựa -1",
+  judgement: "phán xét",
+};
 
 function compactRing(state: TableState): Pick<TableState, "seats" | "ringSize"> {
   const players = state.seats.filter((seat) => seat.role === "player").sort((a, b) => a.index - b.index);
@@ -370,5 +475,5 @@ export function viewFor(state: TableState, viewerId: string): TableView {
 
 export function seatPoint(index: number, ringSize: number): Point {
   const angle = (index / Math.max(1, ringSize)) * Math.PI * 2 + Math.PI / 2;
-  return { x: 0.5 - Math.cos(angle) * 0.44, y: 0.5 + Math.sin(angle) * 0.40 };
+  return { x: 0.5 - Math.cos(angle) * 0.40, y: 0.5 + Math.sin(angle) * 0.33 };
 }

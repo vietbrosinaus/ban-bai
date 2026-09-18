@@ -140,7 +140,7 @@ export default function Primitives() {
 
       <Row title="SeatBadge, CounterChip" note="A counter is a number with a label and nothing else. It is what replaces HP, gold, turn order and targets.">
         <SeatBadge name="Minh" colour="#ff8066" handCount={4} seatNumber={1} />
-        <SeatBadge name="Lan" colour="#65c7ba" handCount={7} seatNumber={2} distance={1} active />
+        <SeatBadge name="Lan" colour="#65c7ba" handCount={7} seatNumber={2} active />
         <SeatBadge name="Huy" colour="#7aa8ff" handCount={0} seatNumber={3} self />
         <CounterChip label="HP" value={4} />
         <CounterChip label="HP" value={2} colour="#ff8066" />

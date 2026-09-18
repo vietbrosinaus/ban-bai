@@ -44,9 +44,14 @@ export { FACTION_FILL, FACTION_RING };
 
 function CardCorner({ rank, suit, className }: { rank: string; suit: Suit; className?: string }) {
   return (
-    <span className={cn("absolute flex flex-col items-center rounded-[0.25em] bg-card-face/90 px-[0.25em] font-serif leading-none", className)}>
-      <b className="font-bold">{rank}</b>
-      <SuitMark suit={suit} />
+    <span
+      className={cn(
+        "absolute flex flex-col items-center rounded-[0.3em] border border-black/15 bg-[#fffdf7] px-[0.3em] py-[0.1em] font-serif leading-none shadow-[0_1px_2px_rgba(0,0,0,0.35)]",
+        className,
+      )}
+    >
+      <b className="font-bold text-[#17241f]">{rank}</b>
+      <SuitMark suit={suit} className="text-[0.95em]" />
     </span>
   );
 }

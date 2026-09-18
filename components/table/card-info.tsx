@@ -105,12 +105,22 @@ function CardInfo({ cardId, className, ...props }: React.ComponentProps<"div"> &
   );
 }
 
-function CardInfoDialog({ cardId, children }: { cardId: CardId; children: React.ReactNode }) {
+function CardInfoDialog({
+  cardId,
+  children,
+  open,
+  onOpenChange,
+}: {
+  cardId: CardId;
+  children?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const card = cardFace(cardId);
   const rules = cardRules(cardId);
   return (
-    <Dialog>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {children ? <DialogTrigger asChild>{children}</DialogTrigger> : null}
       <DialogContent className="max-h-[calc(100dvh-2rem)] gap-4 overflow-y-auto sm:max-w-2xl">
         <DialogHeader className="sr-only">
           <DialogTitle>{card?.name ?? cardId}</DialogTitle>

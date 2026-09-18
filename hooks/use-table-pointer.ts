@@ -4,9 +4,9 @@ import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEv
 
 import { PRESENCE, type Anchor } from "@/lib/domain/presence";
 import type { Command, TablePiece } from "@/lib/domain/table";
-import type { Point } from "@/lib/domain/card";
+import type { Point, SeatSlot } from "@/lib/domain/card";
 
-type DropTarget = { kind: "piece"; id: string } | { kind: "seat"; id: string } | { kind: "hand" } | { kind: "felt" } | null;
+type DropTarget = { kind: "piece"; id: string } | { kind: "slot"; seatId: string; slot: SeatSlot } | { kind: "seat"; id: string } | { kind: "hand" } | { kind: "felt" } | null;
 
 type Drag = { pieceId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean; peel: boolean; count: number };
 type HandDrag = { cardId: string; pointerId: number; startX: number; startY: number; moved: boolean };
@@ -15,6 +15,7 @@ function hitTest(clientX: number, clientY: number, ignoreId?: string): DropTarge
   for (const element of document.elementsFromPoint(clientX, clientY)) {
     const data = (element as HTMLElement).dataset ?? {};
     if (data.piece && data.piece !== ignoreId) return { kind: "piece", id: data.piece };
+    if (data.slot && data.slotSeat) return { kind: "slot", seatId: data.slotSeat, slot: data.slot as SeatSlot };
     if (data.seat) return { kind: "seat", id: data.seat };
     if (data.handzone !== undefined) return { kind: "hand" };
     if (data.felt !== undefined) return { kind: "felt" };
@@ -86,6 +87,7 @@ export function useTablePointer({
     const finish = () => setLocalPositions({});
 
     if (target?.kind === "piece") void send({ type: "merge", pieceId: drag.pieceId, ontoId: target.id }).finally(finish);
+    else if (target?.kind === "slot") void send({ type: "placeInSlot", pieceId: drag.pieceId, seatId: target.seatId, slot: target.slot }).finally(finish);
     else if (target?.kind === "hand") void send({ type: "takeToHand", pieceId: drag.pieceId, count: 99 }).finally(finish);
     else void send({ type: "move", pieceId: drag.pieceId, x: x - drag.dx, y: y - drag.dy }).finally(finish);
   };
@@ -93,7 +95,7 @@ export function useTablePointer({
   const pieceProps = (piece: TablePiece) => ({
     "data-piece": piece.id,
     onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button === 1) { event.preventDefault(); void send({ type: "takeToHand", pieceId: piece.id, count: 1 }); return; }
+      if (event.button === 1) { event.preventDefault(); void send({ type: "flipTop", pieceId: piece.id }); return; }
       if (event.button !== 0) return;
       event.stopPropagation();
       const { x, y } = toFraction(event.clientX, event.clientY);
@@ -116,7 +118,7 @@ export function useTablePointer({
     },
     onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event, true),
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event, false),
-    onDoubleClick: () => void send({ type: "flipTop", pieceId: piece.id }),
+    onDoubleClick: () => void send({ type: "takeToHand", pieceId: piece.id, count: 1 }),
     onWheel: (event: ReactWheelEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       if (drag?.moved && drag.pieceId === piece.id && drag.peel) {
@@ -137,8 +139,9 @@ export function useTablePointer({
     if (!drop || !drag.moved) return;
 
     const target = hitTest(event.clientX, event.clientY);
-    const faceUp = !event.shiftKey;
-    if (target?.kind === "piece") void send({ type: "playOntoPiece", cardId: drag.cardId, pieceId: target.id, faceUp });
+    const faceUp = event.shiftKey;
+    if (target?.kind === "slot") void send({ type: "playToSlot", cardId: drag.cardId, seatId: target.seatId, slot: target.slot, faceUp: true });
+    else if (target?.kind === "piece") void send({ type: "playOntoPiece", cardId: drag.cardId, pieceId: target.id, faceUp });
     else if (target?.kind === "seat") void send({ type: "giveToSeat", cardId: drag.cardId, seatId: target.id });
     else if (target?.kind === "felt") {
       const { x, y } = toFraction(event.clientX, event.clientY);

@@ -53,6 +53,7 @@ export function newTable(code: string, hostId: string, ctx: Pick<CommandContext,
     pieces: starterPieces(ctx, deck),
     hands: {},
     counters: [],
+    clearVote: undefined,
     revision: 1,
     log: [{ id: 1, actorId: "table", text: deck === "tam-quoc-sat" ? "Chồng tướng và chồng bài đã sẵn sàng" : "Bộ bài đã sẵn sàng" }],
   };

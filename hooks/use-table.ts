@@ -14,6 +14,8 @@ export const TABLE_POLL_HIDDEN_MS = 4000;
 
 export type TableStatus = "joining" | "live" | "reconnecting" | "offline" | "missing";
 
+const LIGHT_COMMANDS = new Set<Command["type"]>(["move", "lift", "rotate", "adjustCounter"]);
+
 type JoinReply = { seatId: string; table: TableSnapshot; error?: string };
 
 function seatKey(code: string) {
@@ -31,7 +33,7 @@ export function useTable(code: string) {
   const [fatal, setFatal] = useState("");
 
   const revisionRef = useRef(0);
-  const sendingRef = useRef(false);
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
   const anchorRef = useRef<{ anchor: Anchor; sentAt: number } | null>(null);
 
   const absorb = useCallback((snapshot: TableSnapshot) => {
@@ -99,27 +101,33 @@ export function useTable(code: string) {
   }, [absorb, code, seatId]);
 
   const send = useCallback(async (command: Command) => {
-    if (!seatId || sendingRef.current) return null;
-    sendingRef.current = true;
-    setPending(command.type);
-    try {
-      const response = await fetch(`/api/tables/${encodeURIComponent(code)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ seatId, command }),
-      });
-      const result = await response.json() as TableSnapshot & { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "Nước đi không thành.");
-      absorb(result);
-      return result;
-    } catch {
-      setStatus(navigator.onLine ? "reconnecting" : "offline");
-      void refresh(seatId);
-      return null;
-    } finally {
-      sendingRef.current = false;
-      setPending(null);
-    }
+    if (!seatId) return null;
+    const heavy = !LIGHT_COMMANDS.has(command.type);
+
+    const run = async () => {
+      if (heavy) setPending(command.type);
+      try {
+        const response = await fetch(`/api/tables/${encodeURIComponent(code)}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ seatId, command }),
+        });
+        const result = await response.json() as TableSnapshot & { error?: string };
+        if (!response.ok) throw new Error(result.error ?? "Nước đi không thành.");
+        absorb(result);
+        return result;
+      } catch {
+        setStatus(navigator.onLine ? "reconnecting" : "offline");
+        void refresh(seatId);
+        return null;
+      } finally {
+        if (heavy) setPending(null);
+      }
+    };
+
+    const queued = queueRef.current.then(run, run);
+    queueRef.current = queued.catch(() => undefined);
+    return queued;
   }, [absorb, code, refresh, seatId]);
 
   const setAnchor = useCallback((anchor: Anchor, grabbing = false) => {
