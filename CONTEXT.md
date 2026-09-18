@@ -47,6 +47,16 @@ Joining and creating go over plain HTTP to the same object (`POST /parties/main/
 
 `lib/domain/protocol.ts` holds the message types, so the server and the client cannot drift apart.
 
+Three kinds of traffic ride the socket, and only one is ever saved:
+
+| message | saved | why |
+| --- | --- | --- |
+| `command` | yes | it changes the table |
+| `hand` | no, lives on the connection | where your cursor is, up to 10 a second while moving |
+| `drag` | no, relayed and forgotten | where a card is mid-drag, about 20 a second, so other players see it glide |
+
+The room hibernates between messages, so an idle open tab costs nothing. Hands survive hibernation because each one is stored on its own connection rather than in memory.
+
 ## The table model
 
 One object type. A card is a stack of one, so placing a card on a card, a card on a stack and a stack on a stack are all `merge`.

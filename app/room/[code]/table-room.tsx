@@ -10,6 +10,7 @@ import { CardStack } from "@/components/table/card-stack";
 import { CounterChip } from "@/components/table/counter-chip";
 import { Felt } from "@/components/table/felt";
 import { HandTray } from "@/components/table/hand-tray";
+import { HowToPlay } from "@/components/table/how-to-play";
 import { PlayerCursor } from "@/components/table/player-cursor";
 import { PlayingCard } from "@/components/table/playing-card";
 import { SeatBadge } from "@/components/table/seat-badge";
@@ -141,6 +142,7 @@ export default function TableRoom() {
             {status === "live" ? "trực tiếp" : status === "offline" ? "mất mạng" : "đang nối"}
           </Badge>
           {table?.isHost ? <Badge variant="secondary" className="text-[0.6rem]">chủ bàn</Badge> : null}
+          <HowToPlay />
           <Button variant="secondary" size="sm" onClick={copyInvite}><Users />Mời bạn</Button>
           <TableMenu
             isHost={Boolean(table?.isHost)}
