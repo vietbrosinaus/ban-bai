@@ -33,12 +33,13 @@ import { pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/ta
 import { PIECE_MENU } from "./piece-menu";
 import { HandUtilities } from "./table-controls";
 import { ClearVoteBanner, TableMenu } from "./table-menu";
+import { SelectionBar } from "./selection-bar";
 
 export default function TableRoom() {
   const params = useParams<{ code: string }>();
   const code = String(params.code ?? "").toUpperCase();
   const { ready, seatId, table, status, pending, fatal, join, send, setAnchor } = useTable(code);
-  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({ send, setAnchor });
+  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget, marquee, selection, clearSelection } = useTablePointer({ send, setAnchor });
 
   const storedName = useStoredValue("ban-bai:name");
   const [typedName, setTypedName] = useState<string | null>(null);
@@ -219,6 +220,7 @@ export default function TableRoom() {
                 x={at.x}
                 y={at.y}
                 held={held === piece.id}
+                selected={selection.includes(piece.id)}
                 shrink={held === piece.id && hoverTarget?.kind === "slot"}
                 playedBy={table?.seats.find((seat) => seat.id === piece.playedBy)}
                 pieceProps={pieceProps}
@@ -252,6 +254,26 @@ export default function TableRoom() {
               style={{ opacity: hand.opacity }}
             />
           ))}
+          {marquee ? (
+            <div
+              className="pointer-events-none absolute z-40 rounded-sm border border-gilt/70 bg-gilt/10"
+              style={{
+                left: `${Math.min(marquee.from.x, marquee.to.x) * 100}%`,
+                top: `${Math.min(marquee.from.y, marquee.to.y) * 100}%`,
+                width: `${Math.abs(marquee.to.x - marquee.from.x) * 100}%`,
+                height: `${Math.abs(marquee.to.y - marquee.from.y) * 100}%`,
+              }}
+            />
+          ) : null}
+
+          <SelectionBar
+            selection={selection}
+            discardId={table?.pieces.find((piece) => piece.tag === "discard")?.id}
+            watching={Boolean(watching)}
+            onClear={clearSelection}
+            send={send}
+          />
+
           {table?.clearVote && table.clearVote.expiresAt > now ? (
             <ClearVoteBanner vote={table.clearVote} players={players.length} seatId={seatId} seats={table.seats} send={send} />
           ) : null}
@@ -620,6 +642,7 @@ function PieceOnTable({
   x,
   y,
   held,
+  selected = false,
   shrink = false,
   playedBy,
   pieceProps,
@@ -629,6 +652,7 @@ function PieceOnTable({
   x: number;
   y: number;
   held: boolean;
+  selected?: boolean;
   shrink?: boolean;
   playedBy?: { name: string; colour: string };
   pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
@@ -643,7 +667,9 @@ function PieceOnTable({
           y={y}
           rotation={piece.rotation}
           held={held}
+          selected={selected}
           {...pieceProps(piece)}
+          data-fixed={piece.tag ? "" : undefined}
           onClick={open}
           className="group"
         >

@@ -11,6 +11,7 @@ type DropTarget = { kind: "piece"; id: string } | { kind: "slot"; seatId: string
 type Drag = { pieceId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean; peel: boolean; count: number };
 type CounterDrag = { counterId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean };
 type HandDrag = { cardId: string; pointerId: number; startX: number; startY: number; moved: boolean };
+type Marquee = { pointerId: number; from: Point; to: Point };
 
 function hitTest(clientX: number, clientY: number, ignoreId?: string): DropTarget {
   for (const element of document.elementsFromPoint(clientX, clientY)) {
@@ -45,6 +46,9 @@ export function useTablePointer({
   const [takeCount, setTakeCount] = useState(0);
   const [dragCardId, setDragCardId] = useState<string | null>(null);
   const [hoverTarget, setHoverTarget] = useState<DropTarget>(null);
+  const [marquee, setMarquee] = useState<Marquee | null>(null);
+  const [selection, setSelection] = useState<string[]>([]);
+  const marqueeRef = useRef<Marquee | null>(null);
 
   const toFraction = useCallback((clientX: number, clientY: number): Point => {
     const felt = feltRef.current;
@@ -61,7 +65,33 @@ export function useTablePointer({
   const feltProps = {
     "data-felt": "",
     ref: feltRef,
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-piece],[data-seat],[data-slot-seat],[data-slot=counter-chip]")) return;
+      const from = toFraction(event.clientX, event.clientY);
+      marqueeRef.current = { pointerId: event.pointerId, from, to: from };
+      setMarquee(marqueeRef.current);
+      setSelection([]);
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const box = marqueeRef.current;
+      marqueeRef.current = null;
+      setMarquee(null);
+      if (!box || box.pointerId !== event.pointerId) return;
+      const to = toFraction(event.clientX, event.clientY);
+      if (Math.abs(to.x - box.from.x) < 0.01 && Math.abs(to.y - box.from.y) < 0.01) return;
+      setSelection(pickInside({ ...box, to }));
+    },
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const box = marqueeRef.current;
+      if (box && box.pointerId === event.pointerId) {
+        const to = toFraction(event.clientX, event.clientY);
+        marqueeRef.current = { ...box, to };
+        setMarquee(marqueeRef.current);
+        return;
+      }
       if (event.pointerType === "touch") return;
       if (dragRef.current?.moved) return;
       const { x, y } = toFraction(event.clientX, event.clientY);
@@ -224,5 +254,40 @@ export function useTablePointer({
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event, false),
   });
 
-  return { feltProps, feltRef, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget };
+  function pickInside(box: Marquee) {
+    const felt = feltRef.current;
+    if (!felt) return [];
+    const rect = felt.getBoundingClientRect();
+    const left = Math.min(box.from.x, box.to.x);
+    const right = Math.max(box.from.x, box.to.x);
+    const top = Math.min(box.from.y, box.to.y);
+    const bottom = Math.max(box.from.y, box.to.y);
+    return [...felt.querySelectorAll<HTMLElement>("[data-piece]")]
+      .filter((element) => element.dataset.slotted === undefined && element.dataset.fixed === undefined)
+      .filter((element) => {
+        const box2 = element.getBoundingClientRect();
+        const cx = (box2.left + box2.width / 2 - rect.left) / rect.width;
+        const cy = (box2.top + box2.height / 2 - rect.top) / rect.height;
+        return cx >= left && cx <= right && cy >= top && cy <= bottom;
+      })
+      .map((element) => element.dataset.piece!)
+      .filter(Boolean);
+  }
+
+  return {
+    feltProps,
+    feltRef,
+    pieceProps,
+    handCardProps,
+    counterProps,
+    localPositions,
+    held,
+    carrying,
+    takeCount,
+    dragCardId,
+    hoverTarget,
+    marquee,
+    selection,
+    clearSelection: () => setSelection([]),
+  };
 }

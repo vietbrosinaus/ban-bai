@@ -68,6 +68,12 @@ export type Command =
   | { type: "proposeClear" }
   | { type: "agreeClear" }
   | { type: "cancelClear" }
+  | { type: "selectionMove"; ids: string[]; dx: number; dy: number }
+  | { type: "selectionStack"; ids: string[] }
+  | { type: "selectionFlip"; ids: string[] }
+  | { type: "selectionToHand"; ids: string[] }
+  | { type: "selectionToPile"; ids: string[]; pileId: string }
+  | { type: "selectionSpread"; ids: string[] }
   | { type: "gather" }
   | { type: "compactRing" }
   | { type: "reset" };
@@ -105,6 +111,11 @@ function pieceOf(state: TableState, pieceId: string) {
   const piece = state.pieces.find((item) => item.id === pieceId);
   if (!piece) throw new RuleError("That is not on the table any more.", 409);
   return piece;
+}
+
+function selectionOf(state: TableState, ids: string[]) {
+  const chosen = new Set(ids);
+  return state.pieces.filter((piece) => chosen.has(piece.id) && !piece.slot && !piece.tag && piece.cards.length);
 }
 
 function requireHost(state: TableState, actorId: string) {
@@ -413,6 +424,80 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       }
       const pieces = replacePiece(state.pieces, { ...deck, cards });
       return note({ ...withPieces(state, pieces), hands }, ctx.actorId, `chia mỗi người ${countLabel(count)}`);
+    }
+
+    case "selectionMove": {
+      const chosen = new Set(command.ids);
+      return withPieces(state, state.pieces.map((piece) =>
+        chosen.has(piece.id) && !piece.slot && !piece.tag
+          ? { ...piece, x: clamp(piece.x + command.dx), y: clamp(piece.y + command.dy) }
+          : piece,
+      ));
+    }
+
+    case "selectionStack": {
+      const chosen = selectionOf(state, command.ids);
+      if (chosen.length < 2) return state;
+      const [first, ...rest] = chosen;
+      const merged: TablePiece = { ...first, cards: chosen.flatMap((piece) => piece.cards) };
+      const dropped = new Set(rest.map((piece) => piece.id));
+      const pieces = state.pieces.filter((piece) => !dropped.has(piece.id)).map((piece) => (piece.id === merged.id ? merged : piece));
+      return note(withPieces(state, pieces), ctx.actorId, `gom ${countLabel(merged.cards.length)} thành một chồng`);
+    }
+
+    case "selectionFlip": {
+      const chosen = new Set(selectionOf(state, command.ids).map((piece) => piece.id));
+      const pieces = state.pieces.map((piece) =>
+        chosen.has(piece.id) ? { ...piece, cards: topToBottom(piece.cards) } : piece,
+      );
+      return note(withPieces(state, pieces), ctx.actorId, `lật ${command.ids.length} lá`);
+    }
+
+    case "selectionToHand": {
+      requirePlayer(state, ctx.actorId);
+      const chosen = selectionOf(state, command.ids);
+      if (!chosen.length) return state;
+      const taken = chosen.flatMap((piece) => piece.cards).map((card) => ({ ...card, faceUp: true }));
+      const dropped = new Set(chosen.filter((piece) => !piece.tag).map((piece) => piece.id));
+      const pieces = state.pieces
+        .filter((piece) => !dropped.has(piece.id))
+        .map((piece) => (chosen.some((item) => item.id === piece.id) ? { ...piece, cards: [] } : piece));
+      const hands = { ...state.hands, [ctx.actorId]: [...(state.hands[ctx.actorId] ?? []), ...taken] };
+      return note({ ...withPieces(state, pieces), hands }, ctx.actorId, `cầm ${countLabel(taken.length)} lên tay`);
+    }
+
+    case "selectionToPile": {
+      const target = pieceOf(state, command.pileId);
+      const chosen = selectionOf(state, command.ids).filter((piece) => piece.id !== target.id);
+      if (!chosen.length) return state;
+      const moved = chosen.flatMap((piece) => piece.cards).map((card) => ({ ...card, faceUp: target.tag === "discard" }));
+      const dropped = new Set(chosen.filter((piece) => !piece.tag).map((piece) => piece.id));
+      const pieces = state.pieces
+        .filter((piece) => !dropped.has(piece.id))
+        .map((piece) => {
+          if (piece.id === target.id) return { ...piece, cards: [...piece.cards, ...moved] };
+          return chosen.some((item) => item.id === piece.id) ? { ...piece, cards: [] } : piece;
+        });
+      return note(withPieces(state, pieces), ctx.actorId, `chuyển ${countLabel(moved.length)} vào ${pieceLabel(target)}`);
+    }
+
+    case "selectionSpread": {
+      const chosen = selectionOf(state, command.ids);
+      if (!chosen.length) return state;
+      const row = chosen.flatMap((piece) => piece.cards);
+      const origin = chosen[0];
+      const dropped = new Set(chosen.filter((piece) => !piece.tag).map((piece) => piece.id));
+      const spread: TablePiece[] = row.map((card, index) => ({
+        id: ctx.id(),
+        x: clamp(origin.x + (index - (row.length - 1) / 2) * 0.05),
+        y: clamp(origin.y),
+        rotation: 0,
+        cards: [card],
+      }));
+      const kept = state.pieces
+        .filter((piece) => !dropped.has(piece.id))
+        .map((piece) => (chosen.some((item) => item.id === piece.id) ? { ...piece, cards: [] } : piece));
+      return note(withPieces(state, [...kept, ...spread]), ctx.actorId, `trải ${countLabel(row.length)} ra bàn`);
     }
 
     case "gather": {
