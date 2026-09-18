@@ -5,6 +5,7 @@ import { SuitMark } from "@/components/table/suit-mark";
 import { MetaList } from "@/components/ui/meta-list";
 import { cardFace } from "@/lib/domain/deck";
 import { FACTION_LABEL, type CardId, type Faction, type Suit } from "@/lib/domain/card";
+import type { CardBackKind } from "@/lib/domain/protocol";
 import { cn } from "@/lib/utils";
 
 const playingCardVariants = cva(
@@ -56,6 +57,36 @@ function CardCorner({ rank, suit, className }: { rank: string; suit: Suit; class
   );
 }
 
+const GENERAL_BACK = "ring-[#c9973f] [background-image:repeating-linear-gradient(45deg,#4a2f18,#4a2f18_0.4em,#6b4b21_0.4em,#6b4b21_0.8em)]";
+
+function CardBackMark({ kind }: { kind: CardBackKind }) {
+  return (
+    <span className="absolute inset-0 grid place-items-center">
+      <i className="grid aspect-square w-[45%] rotate-45 place-items-center border border-gilt font-serif text-[16cqw] font-extrabold text-gilt not-italic">
+        <span className="-rotate-45">{kind === "general" ? "將" : "殺"}</span>
+      </i>
+    </span>
+  );
+}
+
+function CardBack({
+  kind,
+  size,
+  className,
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof playingCardVariants> & { kind: CardBackKind }) {
+  return (
+    <div
+      data-slot="card-back"
+      data-kind={kind}
+      className={cn(playingCardVariants({ size, face: "down" }), kind === "general" && GENERAL_BACK, className)}
+      {...props}
+    >
+      <CardBackMark kind={kind} />
+    </div>
+  );
+}
+
 function PlayingCard({
   cardId,
   faceDown = false,
@@ -76,19 +107,13 @@ function PlayingCard({
       className={cn(
         playingCardVariants({ size, face }),
         general && !faceDown && card?.faction && FACTION_RING[card.faction],
-        general && faceDown && "ring-[#c9973f] [background-image:repeating-linear-gradient(45deg,#4a2f18,#4a2f18_0.4em,#6b4b21_0.4em,#6b4b21_0.8em)]",
+        general && faceDown && GENERAL_BACK,
         className
       )}
       style={!faceDown && card?.art ? { backgroundImage: `url("${card.art}")` } : undefined}
       {...props}
     >
-      {faceDown && (
-        <span className="absolute inset-0 grid place-items-center">
-          <i className="grid aspect-square w-[45%] rotate-45 place-items-center border border-gilt font-serif text-[16cqw] font-extrabold text-gilt not-italic">
-            <span className="-rotate-45">{general ? "將" : "殺"}</span>
-          </i>
-        </span>
-      )}
+      {faceDown && <CardBackMark kind={general ? "general" : "play"} />}
       {!faceDown && card && !general && (
         <>
           <CardCorner rank={card.rank} suit={card.suit} className="top-[4cqw] left-[4cqw]" />
@@ -115,4 +140,4 @@ function PlayingCard({
   );
 }
 
-export { PlayingCard, playingCardVariants };
+export { CardBack, PlayingCard, playingCardVariants };

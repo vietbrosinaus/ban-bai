@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { useGlide } from "@/hooks/use-glide";
 import { PRESENCE } from "@/lib/domain/presence";
 import { cn } from "@/lib/utils";
 
@@ -40,23 +41,15 @@ function PlayerCursor({
   grabbing?: boolean;
   self?: boolean;
 }) {
+  const ref = useGlide<HTMLDivElement>(x, y, self ? 0 : PRESENCE.glideMs);
   return (
     <div
+      ref={ref}
       data-slot="player-cursor"
       data-grabbing={grabbing || undefined}
       {...props}
-      className={cn(
-        "pointer-events-none absolute z-50 -translate-x-1 -translate-y-0.5",
-        !self && "ease-linear [transition-property:left,top]",
-        className
-      )}
-      style={{
-        left: `${x * 100}%`,
-        top: `${y * 100}%`,
-        color: colour,
-        transitionDuration: self ? undefined : `${PRESENCE.glideMs}ms`,
-        ...style,
-      }}
+      className={cn("pointer-events-none absolute z-50 -translate-x-1 -translate-y-0.5", className)}
+      style={{ color: colour, ...style }}
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="size-7 drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)]" aria-hidden>
         {grabbing ? CLOSED : OPEN}

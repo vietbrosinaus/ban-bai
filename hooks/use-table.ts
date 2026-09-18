@@ -7,7 +7,7 @@ import { useHydrated, useStoredValue } from "@/hooks/use-hydrated";
 
 import { PRESENCE, nextAnchorToSend, type Anchor } from "@/lib/domain/presence";
 import type { SeatRole } from "@/lib/domain/card";
-import type { ClientMessage, ServerMessage, TableSnapshot } from "@/lib/domain/protocol";
+import type { Carry, ClientMessage, ServerMessage, TableSnapshot } from "@/lib/domain/protocol";
 import type { Command } from "@/lib/domain/table";
 import { MISSING_HOST, PARTY_NAME, partyHost, tableDoor } from "@/lib/party-host";
 
@@ -17,6 +17,8 @@ const LIGHT_COMMANDS = new Set<Command["type"]>(["move", "lift", "rotate", "adju
 const ACK_TIMEOUT_MS = 8000;
 const CONNECT_GRACE_MS = 6000;
 const DRAG_SEND_GAP_MS = 50;
+const PING_GAP_MS = 350;
+const PING_LIFE_MS = 1600;
 const HOST = partyHost();
 
 function seatKey(code: string) {
@@ -38,7 +40,19 @@ export function useTable(code: string) {
   const waitingRef = useRef(new Map<string, (result: TableSnapshot | null) => void>());
   const anchorRef = useRef<{ anchor: Anchor; sentAt: number } | null>(null);
   const dragSentRef = useRef(0);
+  const carrySentRef = useRef(0);
+  const [remoteCarries, setRemoteCarries] = useState<Record<string, Carry>>({});
+  const [pings, setPings] = useState<Array<{ id: number; seatId: string; x: number; y: number }>>([]);
+  const pingSentRef = useRef(0);
+  const pingIdRef = useRef(0);
   const [remoteDrags, setRemoteDrags] = useState<Record<string, { pieceId: string; x: number; y: number }>>({});
+
+  const showPing = useCallback((mover: string, x: number, y: number) => {
+    pingIdRef.current += 1;
+    const id = pingIdRef.current;
+    setPings((current) => [...current, { id, seatId: mover, x, y }]);
+    window.setTimeout(() => setPings((current) => current.filter((ping) => ping.id !== id)), PING_LIFE_MS);
+  }, []);
 
   useEffect(() => {
     if (!HOST || !ready || !seatId) return;
@@ -81,6 +95,21 @@ export function useTable(code: string) {
         });
         return;
       }
+      if (message.t === "ping") {
+        showPing(message.seatId, message.x, message.y);
+        return;
+      }
+      if (message.t === "carry") {
+        const { seatId: mover, carry } = message;
+        setRemoteCarries((current) => {
+          if (carry) return { ...current, [mover]: carry };
+          if (!(mover in current)) return current;
+          const rest = { ...current };
+          delete rest[mover];
+          return rest;
+        });
+        return;
+      }
       if (message.t === "gone") {
         setStatus("missing");
         setFatal(message.message);
@@ -104,7 +133,7 @@ export function useTable(code: string) {
       socket.close();
       socketRef.current = null;
     };
-  }, [code, ready, seatId]);
+  }, [code, ready, seatId, showPing]);
 
   const join = useCallback(async (name: string, role: SeatRole = "player") => {
     const response = await fetch(tableDoor(code), {
@@ -162,5 +191,24 @@ export function useTable(code: string) {
     socket.send(JSON.stringify({ t: "drag", pieceId, x, y } satisfies ClientMessage));
   }, [seatId]);
 
-  return { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, remoteDrags, settleMs: PRESENCE.settleMs };
+  const setCarry = useCallback((carry: Carry | null) => {
+    const socket = socketRef.current;
+    if (!seatId || !socket || socket.readyState !== socket.OPEN) return;
+    const now = performance.now();
+    if (carry && now - carrySentRef.current < DRAG_SEND_GAP_MS) return;
+    carrySentRef.current = carry ? now : 0;
+    socket.send(JSON.stringify({ t: "carry", carry } satisfies ClientMessage));
+  }, [seatId]);
+
+  const ping = useCallback((x: number, y: number) => {
+    const socket = socketRef.current;
+    if (!seatId || !socket || socket.readyState !== socket.OPEN) return;
+    const now = performance.now();
+    if (now - pingSentRef.current < PING_GAP_MS) return;
+    pingSentRef.current = now;
+    showPing(seatId, x, y);
+    socket.send(JSON.stringify({ t: "ping", x, y } satisfies ClientMessage));
+  }, [seatId, showPing]);
+
+  return { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, setCarry, ping, remoteDrags, remoteCarries, pings, settleMs: PRESENCE.settleMs };
 }

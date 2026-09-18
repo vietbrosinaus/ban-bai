@@ -5,6 +5,8 @@ import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEv
 import { PRESENCE, type Anchor } from "@/lib/domain/presence";
 import { onTable, type Command, type TablePiece } from "@/lib/domain/table";
 import type { Point, SeatSlot } from "@/lib/domain/card";
+import { cardFace } from "@/lib/domain/deck";
+import type { Carry } from "@/lib/domain/protocol";
 
 type DropTarget = { kind: "piece"; id: string } | { kind: "slot"; seatId: string; slot: SeatSlot } | { kind: "seat"; id: string } | { kind: "hand" } | { kind: "felt" } | null;
 
@@ -29,11 +31,15 @@ export function useTablePointer({
   send,
   setAnchor,
   setDrag,
+  setCarry,
+  ping,
   peelDefault = false,
 }: {
   send: (command: Command) => Promise<unknown>;
   setAnchor: (anchor: Anchor, grabbing?: boolean) => void;
   setDrag: (pieceId: string | null, x: number, y: number) => void;
+  setCarry: (carry: Carry | null) => void;
+  ping: (x: number, y: number) => void;
   peelDefault?: boolean;
 }) {
   const feltRef = useRef<HTMLDivElement | null>(null);
@@ -80,6 +86,12 @@ export function useTablePointer({
     },
     onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => {
       if (event.target === event.currentTarget) event.preventDefault();
+    },
+    onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-piece],[data-seat],[data-slot-seat],[data-slot=counter-chip],[data-overlay]")) return;
+      const { x, y } = toFraction(event.clientX, event.clientY);
+      ping(x, y);
     },
   };
 
@@ -161,7 +173,7 @@ export function useTablePointer({
     setCarrying(null);
     setDragCardId(null);
     setHoverTarget(null);
-    if (!drop || !drag.moved) return;
+    if (!drop || !drag.moved) { if (drag.moved) setCarry(null); return; }
 
     const target = hitTest(clientX, clientY);
     if (target?.kind === "slot") void send({ type: "playToSlot", cardId: drag.cardId, seatId: target.seatId, slot: target.slot, faceUp });
@@ -171,6 +183,7 @@ export function useTablePointer({
       const { x, y } = toFraction(clientX, clientY);
       void send({ type: "playToTable", cardId: drag.cardId, x, y, faceUp });
     }
+    setCarry(null);
   };
 
   const handCardProps = (cardId: string, onClick?: () => void) => ({
@@ -191,6 +204,8 @@ export function useTablePointer({
       setDragCardId(drag.cardId);
       setHoverTarget(hitTest(event.clientX, event.clientY));
       setCarrying({ cardId: drag.cardId, x: event.clientX, y: event.clientY });
+      const at = toFraction(event.clientX, event.clientY);
+      setCarry({ x: at.x, y: at.y, back: cardFace(drag.cardId)?.kind === "general" ? "general" : "play" });
     },
     onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endHandDrag(event.pointerId, event.clientX, event.clientY, true, event.shiftKey),
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endHandDrag(event.pointerId, event.clientX, event.clientY, false, false),
@@ -200,11 +215,11 @@ export function useTablePointer({
     const drag = counterDragRef.current;
     if (!drag || drag.pointerId !== pointerId) return;
     counterDragRef.current = null;
-    if (!drop || !drag.moved) { setHeld(null); setLocalPositions({}); return; }
+    if (!drop || !drag.moved) { setHeld(null); setLocalPositions({}); if (drag.moved) setDrag(null, 0, 0); return; }
 
     const target = hitTest(clientX, clientY);
     const { x, y } = toFraction(clientX, clientY);
-    const finish = () => { setHeld(null); setLocalPositions({}); };
+    const finish = () => { setHeld(null); setLocalPositions({}); setDrag(null, 0, 0); };
 
     if (target?.kind === "slot" || target?.kind === "seat") {
       const seatId = target.kind === "slot" ? target.seatId : target.id;
@@ -236,7 +251,9 @@ export function useTablePointer({
         setHeld(drag.counterId);
       }
       const { x, y } = toFraction(event.clientX, event.clientY);
-      setLocalPositions({ [drag.counterId]: onTable(x - drag.dx, y - drag.dy) });
+      const at = onTable(x - drag.dx, y - drag.dy);
+      setLocalPositions({ [drag.counterId]: at });
+      setDrag(drag.counterId, at.x, at.y);
     },
     onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event.pointerId, event.clientX, event.clientY, true),
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event.pointerId, event.clientX, event.clientY, false),

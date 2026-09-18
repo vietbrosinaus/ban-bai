@@ -7,6 +7,8 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { CardInfoDialog } from "@/components/table/card-info";
 import { CardStack } from "@/components/table/card-stack";
+import { CarriedCard } from "@/components/table/carried-card";
+import { TablePing } from "@/components/table/table-ping";
 import { CounterChip } from "@/components/table/counter-chip";
 import { Felt } from "@/components/table/felt";
 import { HandTray } from "@/components/table/hand-tray";
@@ -29,7 +31,7 @@ import { useTable } from "@/hooks/use-table";
 import { useTablePointer } from "@/hooks/use-table-pointer";
 import { placeHands } from "@/lib/domain/presence";
 import { cn } from "@/lib/utils";
-import { pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
+import { onTable, pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
 
 import { PIECE_MENU } from "./piece-menu";
 import { HandUtilities } from "./table-controls";
@@ -38,8 +40,8 @@ import { ClearVoteBanner, TableMenu } from "./table-menu";
 export default function TableRoom() {
   const params = useParams<{ code: string }>();
   const code = String(params.code ?? "").toUpperCase();
-  const { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, remoteDrags } = useTable(code);
-  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({ send, setAnchor, setDrag });
+  const { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, setCarry, ping, remoteDrags, remoteCarries, pings } = useTable(code);
+  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({ send, setAnchor, setDrag, setCarry, ping });
   const remoteAt = useMemo(
     () => Object.fromEntries(Object.values(remoteDrags).map((drag) => [drag.pieceId, { x: drag.x, y: drag.y }])) as Record<string, { x: number; y: number }>,
     [remoteDrags],
@@ -234,7 +236,7 @@ export default function TableRoom() {
           })}
 
           {table?.counters.filter((counter) => !counter.slotted).map((counter) => {
-            const at = localPositions[counter.id] ?? { x: counter.x, y: counter.y };
+            const at = localPositions[counter.id] ?? remoteAt[counter.id] ?? { x: counter.x, y: counter.y };
             return (
               <CounterOnTable
                 key={counter.id}
@@ -245,6 +247,19 @@ export default function TableRoom() {
                 counterProps={counterProps}
               />
             );
+          })}
+
+          {pings.map((ping) => {
+            const seat = table?.seats.find((item) => item.id === ping.seatId);
+            return seat ? <TablePing key={ping.id} x={ping.x} y={ping.y} colour={seat.colour} name={seat.name} /> : null;
+          })}
+
+          {Object.entries(remoteCarries).map(([mover, carry]) => {
+            const seat = table?.seats.find((item) => item.id === mover);
+            if (!seat) return null;
+            const inside = carry.x >= 0 && carry.x <= 1 && carry.y >= 0 && carry.y <= 1;
+            const at = inside ? onTable(carry.x, carry.y) : seatPoints.get(mover) ?? { x: 0.5, y: 0.5 };
+            return <CarriedCard key={mover} x={at.x} y={at.y} back={carry.back} colour={seat.colour} />;
           })}
 
           {hands.map((hand) => (

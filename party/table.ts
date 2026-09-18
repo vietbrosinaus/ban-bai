@@ -9,6 +9,7 @@ import { systemClock } from "@/lib/adapters/system-clock";
 import { webCryptoRandomness } from "@/lib/adapters/web-crypto-randomness";
 
 const STATE_KEY = "table";
+const FORGET_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
 
 type SeatState = { seatId: string; hand?: Hand };
 
@@ -35,6 +36,20 @@ export class Table extends Server {
 
   async onStart() {
     this.state = (await this.ctx.storage.get<TableState>(STATE_KEY)) ?? null;
+  }
+
+  async onAlarm() {
+    if ([...this.getConnections()].length > 0) {
+      await this.keepAlive();
+      return;
+    }
+    this.state = null;
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+  }
+
+  private async keepAlive() {
+    await this.ctx.storage.setAlarm(systemClock.now() + FORGET_AFTER_MS);
   }
 
   async onRequest(request: Request) {
@@ -68,6 +83,7 @@ export class Table extends Server {
         const deck: TableDeck = body.deck === "classic-52" ? "classic-52" : "tam-quoc-sat";
         const fresh = newTable(this.name, hostId, { shuffle: webCryptoRandomness.shuffle }, deck);
         await this.commit(this.seat(fresh, hostId, name, "player"));
+        await this.keepAlive();
         return reply({ seatId: hostId }, 201);
       }
 
@@ -94,6 +110,7 @@ export class Table extends Server {
       return;
     }
     this.say(connection, { t: "snapshot", snapshot: this.snapshotFor(seatId) });
+    void this.keepAlive();
   }
 
   onMessage(connection: Connection, raw: WSMessage) {
@@ -116,6 +133,19 @@ export class Table extends Server {
       const hand: Hand = { seatId, anchor: message.anchor, grabbing: message.grabbing, changedAt: systemClock.now() };
       connection.setState({ ...stateOf(connection), hand } satisfies SeatState);
       this.pushHands();
+      return;
+    }
+
+    if (message.t === "ping") {
+      const x = Math.min(1, Math.max(0, Number(message.x) || 0));
+      const y = Math.min(1, Math.max(0, Number(message.y) || 0));
+      this.broadcast(JSON.stringify({ t: "ping", seatId, x, y } satisfies ServerMessage), [connection.id]);
+      return;
+    }
+
+    if (message.t === "carry") {
+      const carry = message.carry && { x: message.carry.x, y: message.carry.y, back: message.carry.back === "general" ? "general" : "play" } as const;
+      this.broadcast(JSON.stringify({ t: "carry", seatId, carry } satisfies ServerMessage), [connection.id]);
       return;
     }
 
@@ -144,6 +174,7 @@ export class Table extends Server {
     if (!seatId) return;
     this.pushHands(connection.id);
     this.broadcast(JSON.stringify({ t: "drag", seatId, pieceId: null, x: 0, y: 0 } satisfies ServerMessage), [connection.id]);
+    this.broadcast(JSON.stringify({ t: "carry", seatId, carry: null } satisfies ServerMessage), [connection.id]);
   }
 
   onError(connection: Connection) {

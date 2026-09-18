@@ -14,6 +14,7 @@ import {
   HandGrab,
   Layers,
   MousePointer2,
+  Radar,
   Move,
   RotateCw,
   Scissors,
@@ -57,6 +58,7 @@ const SECTIONS: Section[] = [
       { icon: RotateCw, action: "Xoay", how: ["Lăn chuột"] },
       { icon: MousePointer2, action: "Xào, trải, cắt đôi, lật cả chồng", how: ["Chuột phải"] },
       { icon: BookOpenText, action: "Xem luật một lá", how: ["Nháy chuột vào lá đang ngửa"] },
+      { icon: Radar, action: "Chỉ cho cả bàn xem", how: ["Nháy đúp vào chỗ trống trên bàn"] },
     ],
   },
   {
