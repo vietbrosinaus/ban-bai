@@ -39,6 +39,7 @@ function SeatBoard({
   self = false,
   compact = false,
   dragCardId,
+  landing,
   filled,
   counters,
   className,
@@ -48,6 +49,7 @@ function SeatBoard({
   self?: boolean;
   compact?: boolean;
   dragCardId?: string | null;
+  landing?: SeatSlot | null;
   filled: (slot: SeatSlot) => React.ReactNode;
   counters?: React.ReactNode;
 }) {
@@ -58,12 +60,14 @@ function SeatBoard({
           {row.map((slot) => {
             const content = filled(slot);
             const verdict = dragCardId ? (slotAllowsCard(slot, dragCardId) ? "allow" : "deny") : undefined;
+            const lands = landing === slot;
             return (
               <div
                 key={slot}
                 data-slot-seat={seatId}
                 data-slot={slot}
                 data-verdict={verdict}
+                data-lands={lands || undefined}
                 title={`${SEAT_SLOT_LABEL[slot]}, ${accepts(slot)}`}
                 className={cn(
                   "grid place-items-center rounded-[0.3rem] border border-dashed border-white/20 bg-black/20 transition-colors",
@@ -74,6 +78,7 @@ function SeatBoard({
                   content && "border-solid border-white/30 bg-transparent",
                   verdict === "allow" && "border-solid border-emerald-400/80 bg-emerald-400/15",
                   verdict === "deny" && "border-solid border-red-400/60 bg-red-400/10",
+                  lands && "z-10 scale-110 border-solid border-gilt bg-gilt/25 shadow-[0_0_0_2px_var(--gilt),0_0_1rem_rgba(244,201,93,0.5)]",
                 )}
               >
                 {content ?? React.createElement(SLOT_ICON[slot], {

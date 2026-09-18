@@ -462,6 +462,22 @@ export const SLOT_ALLOWS: Record<SeatSlot, readonly CardRole[] | null> = {
   judgement: null,
 };
 
+export const ROLE_HOME: Partial<Record<CardRole, readonly SeatSlot[]>> = {
+  general: ["general1", "general2"],
+  weapon: ["weapon"],
+  armor: ["armor"],
+  mount: ["horsePlus", "horseMinus"],
+  delayed: ["judgement"],
+};
+
+export function landingSlot(pieces: readonly TablePiece[], seatId: string, dropped: SeatSlot, cardId: CardId): SeatSlot | null {
+  if (slotAllowsCard(dropped, cardId)) return dropped;
+  const role = cardRules(cardId)?.role;
+  const homes = role ? ROLE_HOME[role] ?? [] : [];
+  const taken = (slot: SeatSlot) => pieces.some((piece) => piece.ownerId === seatId && piece.slot === slot);
+  return homes.find((slot) => !taken(slot)) ?? homes[0] ?? null;
+}
+
 export function slotAllowsCard(slot: SeatSlot, cardId: CardId) {
   const allowed = SLOT_ALLOWS[slot];
   if (!allowed) return true;

@@ -8,13 +8,14 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { CardInfoDialog } from "@/components/table/card-info";
 import { CardStack } from "@/components/table/card-stack";
 import { CarriedCard } from "@/components/table/carried-card";
+import { EmptyHand } from "@/components/table/empty-hand";
 import { TablePing } from "@/components/table/table-ping";
 import { CounterChip } from "@/components/table/counter-chip";
 import { Felt } from "@/components/table/felt";
 import { HandTray } from "@/components/table/hand-tray";
 import { HowToPlay } from "@/components/table/how-to-play";
 import { PlayerCursor } from "@/components/table/player-cursor";
-import { PlayingCard } from "@/components/table/playing-card";
+import { CardBack, PlayingCard } from "@/components/table/playing-card";
 import { SeatBadge } from "@/components/table/seat-badge";
 import { SeatBoard } from "@/components/table/seat-board";
 import { TablePiece } from "@/components/table/table-piece";
@@ -31,7 +32,8 @@ import { useTable } from "@/hooks/use-table";
 import { useTablePointer } from "@/hooks/use-table-pointer";
 import { placeHands } from "@/lib/domain/presence";
 import { cn } from "@/lib/utils";
-import { onTable, pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
+import { cardFace } from "@/lib/domain/deck";
+import { landingSlot, onTable, pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
 
 import { PIECE_MENU } from "./piece-menu";
 import { HandUtilities } from "./table-controls";
@@ -41,7 +43,15 @@ export default function TableRoom() {
   const params = useParams<{ code: string }>();
   const code = String(params.code ?? "").toUpperCase();
   const { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, setCarry, ping, remoteDrags, remoteCarries, pings } = useTable(code);
-  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({ send, setAnchor, setDrag, setCarry, ping });
+  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, lifted, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({
+    send, setAnchor, setDrag, setCarry, ping,
+    landing: (mover, slot, cardId) => landingSlot(table?.pieces ?? [], mover, slot, cardId),
+  });
+  const dropping = Boolean(held) && hoverTarget?.kind === "hand";
+  const landsIn = hoverTarget?.kind === "slot" && dragCardId
+    ? { seatId: hoverTarget.seatId, slot: landingSlot(table?.pieces ?? [], hoverTarget.seatId, hoverTarget.slot, dragCardId) }
+    : null;
+  const handCount = table?.hand.length ?? 0;
   const remoteAt = useMemo(
     () => Object.fromEntries(Object.values(remoteDrags).map((drag) => [drag.pieceId, { x: drag.x, y: drag.y }])) as Record<string, { x: number; y: number }>,
     [remoteDrags],
@@ -122,7 +132,7 @@ export default function TableRoom() {
   }
 
   return (
-    <main className="grid h-svh grid-rows-[3.25rem_minmax(0,1fr)_11rem] overflow-hidden bg-[#0a1713] text-[#f2ede0] select-none">
+    <main className="grid h-svh grid-cols-[minmax(0,1fr)] grid-rows-[3.25rem_minmax(0,1fr)_11rem] overflow-hidden bg-[#0a1713] text-[#f2ede0] select-none">
       <header className="flex items-center gap-2.5 bg-felt-deep/70 px-4 text-sm">
         <b className="text-base">Bàn Bài</b>
         <Button variant="ghost" size="sm" onClick={copyInvite} className="tracking-widest tabular-nums">
@@ -177,14 +187,14 @@ export default function TableRoom() {
                     self={seat.id === seatId}
                     className={cn(
                       "transition-shadow",
-                      carrying
+                      carrying && seat.id !== seatId
                         ? "shadow-[0_0_0_2px_var(--gilt)] hover:shadow-[0_0_0_3px_var(--gilt),0_0_1.2rem_rgba(244,201,93,0.55)]"
                         : "hover:shadow-[0_0_0_2px_var(--gilt)]",
                     )}
                   />
-                  {carrying ? (
+                  {carrying && seat.id !== seatId ? (
                     <Badge className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 bg-gilt text-[0.5rem] whitespace-nowrap text-[#17241f]">
-                      đưa vào tay
+                      đưa cho {seat.name}
                     </Badge>
                   ) : null}
                 </div>
@@ -193,6 +203,7 @@ export default function TableRoom() {
                   self={seat.id === seatId}
                   compact={crowded}
                   dragCardId={dragCardId}
+                  landing={landsIn?.seatId === seat.id ? landsIn.slot : null}
                   counters={
                     (table?.counters ?? []).filter((counter) => counter.slotted && counter.ownerId === seat.id).length ? (
                       <div className="flex gap-1">
@@ -223,6 +234,7 @@ export default function TableRoom() {
                 x={at.x}
                 y={at.y}
                 held={held === piece.id}
+                lifted={lifted?.pieceId === piece.id}
                 shrink={held === piece.id && hoverTarget?.kind === "slot"}
                 playedBy={table?.seats.find((seat) => seat.id === piece.playedBy)}
                 pieceProps={pieceProps}
@@ -292,19 +304,37 @@ export default function TableRoom() {
         </aside>
       </div>
 
-      <section data-handzone className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-t border-gilt/25 bg-[radial-gradient(ellipse_at_50%_-40%,rgba(24,133,99,0.35),transparent_70%),linear-gradient(#06100d,#040b09)] px-4 pt-2">
+      <section
+        data-handzone
+        data-dropping={dropping || undefined}
+        className={cn(
+          "relative grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] px-4 pt-3.5 transition-[box-shadow,background-image] duration-200",
+          "bg-[radial-gradient(ellipse_at_50%_-40%,rgba(24,133,99,0.35),transparent_70%),linear-gradient(#06100d,#040b09)]",
+          dropping && "bg-[radial-gradient(ellipse_at_50%_-10%,rgba(244,201,93,0.22),transparent_70%),linear-gradient(#0b1d17,#050d0a)] shadow-[inset_0_0_0_2px_var(--gilt)]",
+        )}
+      >
+        <span aria-hidden className="absolute inset-x-0 top-0 h-1.5 bg-[linear-gradient(var(--rail),var(--rail-dark))] shadow-[0_2px_6px_rgba(0,0,0,0.55)]" />
+        {dropping && handCount > 0 ? (
+          <span className="pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-gilt px-3 py-1 text-xs font-bold text-[#10201a] shadow-lg">
+            Thả để cầm vào tay
+          </span>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <MetaList className="text-[0.68rem] text-gilt-dim">
-            {watching ? <span>Bạn đang xem</span> : <span>Bài trên tay</span>}
-            {watching ? <span className="text-white/40">ghế xem không cầm bài</span> : <span className="tabular-nums">{table?.hand.length ?? 0}</span>}
-            {watching ? null : <span className="text-white/40">kéo lên bàn để đánh úp, giữ Shift để ngửa</span>}
-          </MetaList>
+          <div className="flex items-center gap-2">
+            <span className="text-[0.7rem] font-semibold text-gilt-dim">{watching ? "Bạn đang xem" : "Bài trên tay"}</span>
+            {watching ? null : (
+              <Badge variant="secondary" className="h-5 min-w-5 justify-center border-0 bg-gilt/15 px-1.5 text-[0.65rem] text-gilt tabular-nums">
+                {handCount}
+              </Badge>
+            )}
+            {!watching && handCount > 0 ? <span className="text-[0.68rem] text-white/40">kéo lên bàn để đánh úp, giữ Shift để ngửa</span> : null}
+          </div>
           <HandUtilities watching={Boolean(watching)} send={send} seatPoint={seatPoints.get(seatId) ?? { x: 0.5, y: 0.85 }} />
         </div>
         <HandTray
           size="sm"
           cards={table?.hand ?? []}
-          empty={watching ? "người xem không cầm bài" : "tay trống, rút từ chồng bài hoặc nhờ chủ bàn chia"}
+          empty={<EmptyHand dropping={dropping} watching={Boolean(watching)} />}
           className="min-h-0 items-center pb-3"
           renderCard={(card) => (
             <HandCard
@@ -316,6 +346,26 @@ export default function TableRoom() {
           )}
         />
       </section>
+
+      {lifted && (() => {
+        const piece = table?.pieces.find((item) => item.id === lifted.pieceId);
+        const top = piece?.cards.at(-1);
+        if (!piece || !top) return null;
+        const dropping = hoverTarget?.kind === "hand";
+        return (
+          <div
+            className={cn("pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 transition-transform duration-150", dropping ? "scale-110 rotate-[-2deg]" : "rotate-[-5deg]")}
+            style={{ left: lifted.x, top: lifted.y }}
+          >
+            {top.faceUp ? <PlayingCard cardId={top.id} size="sm" /> : <CardBack kind={cardFace(top.id)?.kind === "general" ? "general" : "play"} size="sm" />}
+            {piece.cards.length > 1 && (
+              <Badge variant="destructive" className="absolute -top-2 -right-2 min-w-6 justify-center border-2 border-felt-deep tabular-nums">
+                {piece.cards.length}
+              </Badge>
+            )}
+          </div>
+        );
+      })()}
 
       {carrying && (
         <div
@@ -631,6 +681,7 @@ function PieceOnTable({
   x,
   y,
   held,
+  lifted = false,
   shrink = false,
   playedBy,
   pieceProps,
@@ -640,6 +691,7 @@ function PieceOnTable({
   x: number;
   y: number;
   held: boolean;
+  lifted?: boolean;
   shrink?: boolean;
   playedBy?: { name: string; colour: string };
   pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
@@ -655,7 +707,7 @@ function PieceOnTable({
           rotation={piece.rotation}
           held={held}
           {...pieceProps(piece, open)}
-          className="group"
+          className={cn("group", lifted && "opacity-0")}
         >
           <CardStack
             cards={piece.cards}

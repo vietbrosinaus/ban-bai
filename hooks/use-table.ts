@@ -2,6 +2,7 @@
 
 import PartySocket from "partysocket";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { useHydrated, useStoredValue } from "@/hooks/use-hydrated";
 
@@ -116,6 +117,7 @@ export function useTable(code: string) {
         return;
       }
       if (message.t === "ack" || message.t === "reject") {
+        if (message.t === "reject") toast.error(message.message, { id: `reject:${message.message}` });
         waitingRef.current.get(message.nonce)?.(message.t === "ack" ? tableRef.current : null);
         waitingRef.current.delete(message.nonce);
       }

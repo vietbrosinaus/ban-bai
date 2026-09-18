@@ -3,6 +3,8 @@
 import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { PRESENCE, type Anchor } from "@/lib/domain/presence";
+import { toast } from "sonner";
+
 import { onTable, type Command, type TablePiece } from "@/lib/domain/table";
 import type { Point, SeatSlot } from "@/lib/domain/card";
 import { cardFace } from "@/lib/domain/deck";
@@ -10,7 +12,9 @@ import type { Carry } from "@/lib/domain/protocol";
 
 type DropTarget = { kind: "piece"; id: string } | { kind: "slot"; seatId: string; slot: SeatSlot } | { kind: "seat"; id: string } | { kind: "hand" } | { kind: "felt" } | null;
 
-type Drag = { pieceId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean; peel: boolean; count: number; cards: number };
+type Drag = { pieceId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean; peel: boolean; count: number; cards: number; topCard: string | null };
+
+const NO_SLOT = "Không ô nào nhận lá này. Kéo lên bàn để đánh.";
 type CounterDrag = { counterId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean };
 type HandDrag = { cardId: string; pointerId: number; startX: number; startY: number; moved: boolean };
 
@@ -33,6 +37,7 @@ export function useTablePointer({
   setDrag,
   setCarry,
   ping,
+  landing,
   peelDefault = false,
 }: {
   send: (command: Command) => Promise<unknown>;
@@ -40,6 +45,7 @@ export function useTablePointer({
   setDrag: (pieceId: string | null, x: number, y: number) => void;
   setCarry: (carry: Carry | null) => void;
   ping: (x: number, y: number) => void;
+  landing: (seatId: string, slot: SeatSlot, cardId: string) => SeatSlot | null;
   peelDefault?: boolean;
 }) {
   const feltRef = useRef<HTMLDivElement | null>(null);
@@ -52,6 +58,7 @@ export function useTablePointer({
   const [held, setHeld] = useState<string | null>(null);
   const [carrying, setCarrying] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const [takeCount, setTakeCount] = useState(0);
+  const [lifted, setLifted] = useState<{ pieceId: string; x: number; y: number } | null>(null);
   const [dragCardId, setDragCardId] = useState<string | null>(null);
   const [hoverTarget, setHoverTarget] = useState<DropTarget>(null);
 
@@ -103,6 +110,7 @@ export function useTablePointer({
     if (!drag || drag.pointerId !== pointerId) return;
     dragRef.current = null;
     setTakeCount(0);
+    setLifted(null);
     trackHand(clientX, clientY, false);
     if (!drop || !drag.moved) setDrag(null, 0, 0);
     setDragCardId(null);
@@ -113,10 +121,14 @@ export function useTablePointer({
     const { x, y } = toFraction(clientX, clientY);
     const finish = () => { setHeld(null); setLocalPositions({}); setDrag(null, 0, 0); };
 
-    if (target?.kind === "hand") void send({ type: "takeToHand", pieceId: drag.pieceId, count: drag.peel ? drag.count : 99 }).finally(finish);
+    if (target?.kind === "hand") void send({ type: "takeToHand", pieceId: drag.pieceId, count: drag.peel ? drag.count : drag.cards }).finally(finish);
     else if (drag.peel && drag.count < drag.cards) void send({ type: "split", pieceId: drag.pieceId, count: drag.count, x: x - drag.dx, y: y - drag.dy }).finally(finish);
     else if (target?.kind === "piece") void send({ type: "merge", pieceId: drag.pieceId, ontoId: target.id }).finally(finish);
-    else if (target?.kind === "slot") void send({ type: "placeInSlot", pieceId: drag.pieceId, seatId: target.seatId, slot: target.slot }).finally(finish);
+    else if (target?.kind === "slot") {
+      const slot = drag.topCard ? landing(target.seatId, target.slot, drag.topCard) : target.slot;
+      if (slot) void send({ type: "placeInSlot", pieceId: drag.pieceId, seatId: target.seatId, slot }).finally(finish);
+      else { toast.error(NO_SLOT, { id: NO_SLOT }); finish(); }
+    }
     else void send({ type: "move", pieceId: drag.pieceId, x: x - drag.dx, y: y - drag.dy }).finally(finish);
   };
 
@@ -132,7 +144,7 @@ export function useTablePointer({
       const box = event.currentTarget.getBoundingClientRect();
       const origin = toFraction(box.left + box.width / 2, box.top + box.height / 2);
       const peel = peelDefault ? !event.shiftKey : event.shiftKey;
-      dragRef.current = { pieceId: piece.id, pointerId: event.pointerId, dx: x - origin.x, dy: y - origin.y, startX: event.clientX, startY: event.clientY, moved: false, peel, count: 1, cards: piece.cards.length };
+      dragRef.current = { pieceId: piece.id, pointerId: event.pointerId, dx: x - origin.x, dy: y - origin.y, startX: event.clientX, startY: event.clientY, moved: false, peel, count: 1, cards: piece.cards.length, topCard: piece.cards.at(-1)?.faceUp ? piece.cards.at(-1)!.id : null };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -151,6 +163,11 @@ export function useTablePointer({
       setHoverTarget(hitTest(event.clientX, event.clientY, drag.pieceId));
       trackHand(event.clientX, event.clientY, true);
       const { x, y } = toFraction(event.clientX, event.clientY);
+      if (x < 0 || x > 1 || y < 0 || y > 1) {
+        setLifted({ pieceId: drag.pieceId, x: event.clientX, y: event.clientY });
+        return;
+      }
+      setLifted(null);
       const at = onTable(x - drag.dx, y - drag.dy);
       setLocalPositions({ [drag.pieceId]: at });
       if (!drag.peel) setDrag(drag.pieceId, at.x, at.y);
@@ -181,7 +198,11 @@ export function useTablePointer({
     if (!drop || !drag.moved) { if (drag.moved) setCarry(null); return; }
 
     const target = hitTest(clientX, clientY);
-    if (target?.kind === "slot") void send({ type: "playToSlot", cardId: drag.cardId, seatId: target.seatId, slot: target.slot, faceUp });
+    if (target?.kind === "slot") {
+      const slot = landing(target.seatId, target.slot, drag.cardId);
+      if (slot) void send({ type: "playToSlot", cardId: drag.cardId, seatId: target.seatId, slot, faceUp });
+      else toast.error(NO_SLOT, { id: NO_SLOT });
+    }
     else if (target?.kind === "piece") void send({ type: "playOntoPiece", cardId: drag.cardId, pieceId: target.id, faceUp });
     else if (target?.kind === "seat") void send({ type: "giveToSeat", cardId: drag.cardId, seatId: target.id });
     else if (target?.kind === "felt") {
@@ -299,5 +320,5 @@ export function useTablePointer({
     };
   }, []);
 
-  return { feltProps, feltRef, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget };
+  return { feltProps, feltRef, pieceProps, handCardProps, counterProps, localPositions, held, lifted, carrying, takeCount, dragCardId, hoverTarget };
 }
