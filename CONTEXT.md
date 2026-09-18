@@ -68,6 +68,8 @@ One object type. A card is a stack of one, so placing a card on a card, a card o
 
 Three pieces exist at the start and are tagged so they are never destroyed when emptied: `generals`, `deck`, `discard`. Everything else players build by hand.
 
+Cards come in two kinds, generals and play cards, and a pile only ever holds one kind. A pile's kind comes from its tag if it has one (`generals` is generals, `deck` and `discard` are play cards), otherwise from its cards. `merge` and `playOntoPiece` refuse a card of the wrong kind, and sweeping the table (`gather`, the clear vote) sends every card back to its own home pile rather than into the deck. Keeping piles pure is what makes splitting them later easy. A tagged pile is shared by the whole table, so it can never be placed into a seat slot; you take cards from it instead.
+
 ## Seats
 
 Seat index is permanent for as long as a player is seated, and `ringSize` never shrinks while people are playing. Leaving does not move anyone. This matters because clockwise order and `seatDistance` drive attack range, which players count by eye. The host can `compactRing` deliberately between games. The UI rotates the ring for display so you always sit at the bottom of your own screen, without changing anyone's real seat number.

@@ -1,8 +1,8 @@
 import type { CardId, CardRef, Counter, Piece, Point, Seat, SeatRole, SeatSlot } from "./card";
-import { ROLE_LABEL, cardRules, type CardRole } from "./deck";
+import { ROLE_LABEL, cardFace, cardRules, type CardRole } from "./deck";
 import { starterPieces, type TableDeck } from "./setup";
 
-export type PieceTag = "generals" | "deck" | "discard" | "seat";
+export type PieceTag = "generals" | "deck" | "discard";
 
 export type TablePiece = Piece & {
   tag?: PieceTag;
@@ -112,12 +112,12 @@ function requirePlayer(state: TableState, seatId: string) {
 
 function pieceOf(state: TableState, pieceId: string) {
   const piece = state.pieces.find((item) => item.id === pieceId);
-  if (!piece) throw new RuleError("That is not on the table any more.", 409);
+  if (!piece) throw new RuleError("Lá bài đó không còn trên bàn nữa.", 409);
   return piece;
 }
 
 function requireHost(state: TableState, actorId: string) {
-  if (state.hostId !== actorId) throw new RuleError("Only the host can do that.", 403);
+  if (state.hostId !== actorId) throw new RuleError("Chỉ chủ bàn mới làm được việc này.", 403);
 }
 
 function note(state: TableState, actorId: string, text: string): TableState {
@@ -194,6 +194,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
     case "placeInSlot": {
       const piece = pieceOf(state, command.pieceId);
       const seat = seatOf(state, command.seatId);
+      if (piece.tag) throw new RuleError(`${pieceLabel(piece)} không đặt vào ô được, hãy kéo từng lá.`, 409);
       guardSlot(command.slot, piece.cards);
       const occupant = state.pieces.find((item) => item.ownerId === seat.id && item.slot === command.slot && item.id !== piece.id);
       if (occupant && command.slot !== "judgement") {
@@ -268,11 +269,8 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       if (agreedBy.length * 2 < players) {
         return note({ ...state, clearVote: { ...vote, agreedBy } }, ctx.actorId, "đồng ý dọn bàn");
       }
-      const swept = state.pieces.filter((piece) => Boolean(piece.tag));
-      const deck = swept.find((piece) => piece.tag === "deck");
-      const loose = state.pieces.filter((piece) => !piece.tag).flatMap((piece) => piece.cards).map((card) => ({ ...card, faceUp: false }));
-      const pieces = deck ? swept.map((piece) => (piece.id === deck.id ? { ...piece, cards: [...piece.cards, ...loose] } : piece)) : swept;
-      return note({ ...withPieces(state, pieces), clearVote: undefined }, ctx.actorId, "cả bàn đồng ý, bàn đã được dọn");
+      const loose = state.pieces.filter((piece) => !piece.tag);
+      return note({ ...withPieces(state, sweepHome(state, loose)), clearVote: undefined }, ctx.actorId, "cả bàn đồng ý, bàn đã được dọn");
     }
 
     case "cancelClear": {
@@ -341,6 +339,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       const onto = pieceOf(state, command.ontoId);
       if (from.id === onto.id) return state;
       if (onto.slot) guardSlot(onto.slot, from.cards);
+      guardKind(onto, from.cards);
       const merged: TablePiece = { ...onto, cards: [...onto.cards, ...from.cards] };
       const base = from.tag ? replacePiece(state.pieces, { ...from, cards: [] }) : dropPiece(state.pieces, from.id);
       return note(withPieces(state, replacePiece(base, merged)), ctx.actorId, `đặt ${pieceLabel(from)} lên ${pieceLabel(onto)}`);
@@ -361,7 +360,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
     case "playToTable": {
       const hand = state.hands[ctx.actorId] ?? [];
       const card = hand.find((item) => item.id === command.cardId);
-      if (!card) throw new RuleError("That card is not in your hand.", 409);
+      if (!card) throw new RuleError("Lá đó không có trên tay bạn.", 409);
       const born: TablePiece = { id: ctx.id(), ...onTable(command.x, command.y), rotation: 0, playedBy: ctx.actorId, cards: [{ id: card.id, faceUp: command.faceUp }] };
       const hands = { ...state.hands, [ctx.actorId]: hand.filter((item) => item.id !== card.id) };
       return note({ ...withPieces(state, [...state.pieces, born]), hands }, ctx.actorId, command.faceUp ? "đánh một lá ngửa" : "đánh một lá úp");
@@ -370,8 +369,10 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
     case "playOntoPiece": {
       const hand = state.hands[ctx.actorId] ?? [];
       const card = hand.find((item) => item.id === command.cardId);
-      if (!card) throw new RuleError("That card is not in your hand.", 409);
+      if (!card) throw new RuleError("Lá đó không có trên tay bạn.", 409);
       const piece = pieceOf(state, command.pieceId);
+      if (piece.slot) guardSlot(piece.slot, [card]);
+      guardKind(piece, [card]);
       const hands = { ...state.hands, [ctx.actorId]: hand.filter((item) => item.id !== card.id) };
       const merged = { ...piece, cards: [...piece.cards, { id: card.id, faceUp: command.faceUp }] };
       return note({ ...withPieces(state, replacePiece(state.pieces, merged)), hands }, ctx.actorId, `đặt một lá lên ${pieceLabel(piece)}`);
@@ -407,7 +408,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
     case "dealToAll": {
       requireHost(state, ctx.actorId);
       const deck = state.pieces.find((piece) => piece.tag === "deck");
-      if (!deck) throw new RuleError("There is no deck on the table.", 409);
+      if (!deck) throw new RuleError("Trên bàn không còn chồng bài.", 409);
       const count = Math.max(1, Math.min(13, command.count));
       const hands = { ...state.hands };
       const cards = [...deck.cards];
@@ -422,12 +423,9 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
     }
 
     case "gather": {
-      const deck = state.pieces.find((piece) => piece.tag === "deck");
-      if (!deck) return state;
       const loose = state.pieces.filter((piece) => !piece.tag);
-      const gathered = loose.flatMap((piece) => piece.cards).map((card) => ({ ...card, faceUp: false }));
-      const pieces = state.pieces.filter((piece) => Boolean(piece.tag)).map((piece) => (piece.id === deck.id ? { ...piece, cards: [...piece.cards, ...gathered] } : piece));
-      return note(withPieces(state, pieces), ctx.actorId, "dọn bài về chồng bài");
+      if (!loose.length) return state;
+      return note(withPieces(state, sweepHome(state, loose)), ctx.actorId, "dọn bài về chồng");
     }
 
     case "reset": {
@@ -475,11 +473,44 @@ export function landingSlot(pieces: readonly TablePiece[], seatId: string, dropp
   return homes.find((slot) => !taken(slot)) ?? homes[0] ?? null;
 }
 
+export type CardKind = "general" | "play";
+
+export function cardKind(cardId: CardId): CardKind {
+  return cardFace(cardId)?.kind === "general" ? "general" : "play";
+}
+
+export function pieceKind(piece: Pick<TablePiece, "tag" | "cards">): CardKind {
+  if (piece.tag === "generals") return "general";
+  if (piece.tag) return "play";
+  return cardKind(piece.cards[0]?.id ?? "");
+}
+
+export function pieceAccepts(piece: Pick<TablePiece, "tag" | "cards" | "slot">, cardIds: readonly CardId[]) {
+  if (piece.slot) return true;
+  const kind = pieceKind(piece);
+  return cardIds.every((id) => cardKind(id) === kind);
+}
+
 export function slotAllowsCard(slot: SeatSlot, cardId: CardId) {
   const allowed = SLOT_ALLOWS[slot];
   if (!allowed) return true;
   const role = cardRules(cardId)?.role;
   return Boolean(role && allowed.includes(role));
+}
+
+function guardKind(piece: TablePiece, cards: readonly CardRef[]) {
+  if (pieceAccepts(piece, cards.map((card) => card.id))) return;
+  throw new RuleError(pieceKind(piece) === "general" ? "Chồng tướng chỉ nhận lá tướng." : "Lá tướng không đặt chung với bài thường được.", 409);
+}
+
+function sweepHome(state: TableState, swept: readonly TablePiece[]) {
+  const cards = swept.flatMap((piece) => piece.cards).map((card) => ({ ...card, faceUp: false }));
+  const homeOf = (kind: CardKind) => state.pieces.find((piece) => piece.tag === (kind === "general" ? "generals" : "deck"))?.id;
+  const kept = state.pieces.filter((piece) => !swept.includes(piece));
+  return kept.map((piece) => {
+    const arriving = cards.filter((card) => homeOf(cardKind(card.id)) === piece.id);
+    return arriving.length ? { ...piece, cards: [...piece.cards, ...arriving] } : piece;
+  });
 }
 
 function guardSlot(slot: SeatSlot, cards: CardRef[]) {

@@ -18,6 +18,7 @@ import {
   Move,
   RotateCw,
   Scissors,
+  WalletCards,
   type LucideIcon,
 } from "lucide-react";
 
@@ -37,6 +38,7 @@ const SECTIONS: Section[] = [
     title: "Rút bài",
     moves: [
       { icon: Hand, action: "Rút 1 lá", how: ["Nháy đúp vào chồng bài"] },
+      { icon: WalletCards, action: "Rút nhiều lá một lần", how: ["Chuột phải vào chồng bài", "Rút nhiều lá"] },
       { icon: HandGrab, action: "Cầm cả chồng", how: ["Kéo chồng bài xuống khay tay"] },
       { icon: Scissors, action: "Tách vài lá ra", how: ["Shift", "kéo chồng bài", "lăn chuột chọn số lá"] },
     ],

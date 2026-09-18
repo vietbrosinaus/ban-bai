@@ -34,9 +34,10 @@ import { useTablePointer } from "@/hooks/use-table-pointer";
 import { placeHands } from "@/lib/domain/presence";
 import { cn } from "@/lib/utils";
 import { cardFace } from "@/lib/domain/deck";
-import { landingSlot, onTable, pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
+import { cardKind, landingSlot, onTable, pieceKind, pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
 
 import { PIECE_MENU } from "./piece-menu";
+import { TakeSome } from "./take-some";
 import { HandUtilities } from "./table-controls";
 import { ClearVoteBanner, TableMenu } from "./table-menu";
 
@@ -49,6 +50,8 @@ export default function TableRoom() {
     landing: (mover, slot, cardId) => landingSlot(table?.pieces ?? [], mover, slot, cardId),
   });
   const dropping = Boolean(held) && hoverTarget?.kind === "hand";
+  const heldPiece = held ? table?.pieces.find((piece) => piece.id === held) : undefined;
+  const heldKind = carrying ? cardKind(carrying.cardId) : heldPiece?.cards.length ? pieceKind(heldPiece) : null;
   const landsIn = hoverTarget?.kind === "slot" && dragCardId
     ? { seatId: hoverTarget.seatId, slot: landingSlot(table?.pieces ?? [], hoverTarget.seatId, hoverTarget.slot, dragCardId) }
     : null;
@@ -236,6 +239,7 @@ export default function TableRoom() {
                 y={at.y}
                 held={held === piece.id}
                 lifted={lifted?.pieceId === piece.id}
+                refusing={Boolean(heldKind) && hoverTarget?.kind === "piece" && hoverTarget.id === piece.id && !piece.slot && pieceKind(piece) !== heldKind}
                 shrink={held === piece.id && hoverTarget?.kind === "slot"}
                 playedBy={table?.seats.find((seat) => seat.id === piece.playedBy)}
                 pieceProps={pieceProps}
@@ -609,6 +613,7 @@ function CardShell({
   children: (open: () => void) => React.ReactNode;
 }) {
   const [info, setInfo] = useState(false);
+  const [takingSome, setTakingSome] = useState(false);
   const items = PIECE_MENU.filter((item) => item.when(piece));
   const top = piece.cards[piece.cards.length - 1];
   const readable = top?.faceUp ? top.id : undefined;
@@ -636,7 +641,7 @@ function CardShell({
             </>
           ) : null}
           {items.map((item) => (
-            <ContextMenuItem key={item.key} onSelect={() => void send(item.command(piece))}>
+            <ContextMenuItem key={item.key} onSelect={() => { if ("asks" in item) setTakingSome(true); else void send(item.command(piece)); }}>
               <item.icon />
               {item.label}
               {item.gesture ? <ContextMenuShortcut>{item.gesture}</ContextMenuShortcut> : null}
@@ -645,6 +650,7 @@ function CardShell({
         </ContextMenuContent>
       </ContextMenu>
       {readable ? <CardInfoDialog cardId={readable} open={info} onOpenChange={setInfo} /> : null}
+      {takingSome ? <TakeSome piece={piece} onClose={() => setTakingSome(false)} send={send} /> : null}
     </>
   );
 }
@@ -685,6 +691,7 @@ function PieceOnTable({
   y,
   held,
   lifted = false,
+  refusing = false,
   shrink = false,
   playedBy,
   pieceProps,
@@ -695,6 +702,7 @@ function PieceOnTable({
   y: number;
   held: boolean;
   lifted?: boolean;
+  refusing?: boolean;
   shrink?: boolean;
   playedBy?: { name: string; colour: string };
   pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
@@ -716,8 +724,16 @@ function PieceOnTable({
             cards={piece.cards}
             label={piece.label}
             size={shrink ? "xs" : "sm"}
-            className="transition-transform duration-150 group-hover:-translate-y-0.5"
+            className={cn(
+              "transition-transform duration-150 group-hover:-translate-y-0.5",
+              refusing && "rounded-[7%] outline-2 outline-offset-2 outline-red-400",
+            )}
           />
+          {refusing ? (
+            <Badge variant="destructive" className="pointer-events-none absolute -top-7 left-1/2 z-20 -translate-x-1/2 text-[0.55rem] whitespace-nowrap">
+              {pieceKind(piece) === "general" ? "chỉ nhận lá tướng" : "không nhận lá tướng"}
+            </Badge>
+          ) : null}
           {single && playedBy ? (
             <Badge
               variant="secondary"
