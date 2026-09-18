@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LanguageToggle, localizeServerText, useLanguage } from "@/components/language-provider";
-import type { GameMode } from "@/lib/game";
 
 export default function Lobby() {
   const router = useRouter();
@@ -16,17 +15,17 @@ export default function Lobby() {
   const [name, setName] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [game, setGame] = useState<GameMode>("sandbox-52");
+  const [deck, setDeck] = useState<"tam-quoc-sat" | "classic-52">("tam-quoc-sat");
 
   async function previewCreate(event: FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
     setBusy(true);
     try {
-      const response = await fetch("/api/rooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, game }) });
-      const result = await response.json() as { code?: string; playerId?: string; error?: string };
-      if (!response.ok || !result.code || !result.playerId) throw new Error(result.error ?? t("createError"));
-      localStorage.setItem(`ban-bai:${result.code}:player`, result.playerId);
+      const response = await fetch("/api/tables", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, deck }) });
+      const result = await response.json() as { code?: string; seatId?: string; error?: string };
+      if (!response.ok || !result.code || !result.seatId) throw new Error(result.error ?? t("createError"));
+      localStorage.setItem(`ban-bai:${result.code}:seat`, result.seatId);
       localStorage.setItem("ban-bai:name", name.trim());
       router.push(`/room/${result.code}`);
     } catch (error) {
@@ -42,10 +41,10 @@ export default function Lobby() {
     if (!name.trim() || code.length < 4) return;
     setBusy(true);
     try {
-      const response = await fetch(`/api/rooms/${encodeURIComponent(code)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "join", name }) });
-      const result = await response.json() as { playerId?: string; error?: string };
-      if (!response.ok || !result.playerId) throw new Error(result.error ?? t("joinError"));
-      localStorage.setItem(`ban-bai:${code}:player`, result.playerId);
+      const response = await fetch(`/api/tables/${encodeURIComponent(code)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "join", name, role: "player" }) });
+      const result = await response.json() as { seatId?: string; error?: string };
+      if (!response.ok || !result.seatId) throw new Error(result.error ?? t("joinError"));
+      localStorage.setItem(`ban-bai:${code}:seat`, result.seatId);
       localStorage.setItem("ban-bai:name", name.trim());
       router.push(`/room/${code}`);
     } catch (error) {
@@ -83,10 +82,10 @@ export default function Lobby() {
             <Input id="create-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={t("namePlaceholder")} autoComplete="nickname" maxLength={24} />
             <fieldset className="game-picker">
               <legend>{t("chooseDeck")}</legend>
-              <button type="button" className={game === "sandbox-52" ? "is-selected" : ""} onClick={() => setGame("sandbox-52")} aria-pressed={game === "sandbox-52"}>
+              <button type="button" className={deck === "classic-52" ? "is-selected" : ""} onClick={() => setDeck("classic-52")} aria-pressed={deck === "classic-52"}>
                 <span className="picker-icon">♠</span><span><b>{t("classicCards")}</b><small>{t("sandbox52")}</small></span>
               </button>
-              <button type="button" className={game === "tam-quoc-sat" ? "is-selected" : ""} onClick={() => setGame("tam-quoc-sat")} aria-pressed={game === "tam-quoc-sat"}>
+              <button type="button" className={deck === "tam-quoc-sat" ? "is-selected" : ""} onClick={() => setDeck("tam-quoc-sat")} aria-pressed={deck === "tam-quoc-sat"}>
                 <span className="picker-icon picker-tqs">殺</span><span><b>Tam Quốc Sát</b><small>{t("tamDeck")}</small></span>
               </button>
             </fieldset>
