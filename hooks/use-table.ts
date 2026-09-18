@@ -16,6 +16,7 @@ export type TableStatus = "joining" | "live" | "reconnecting" | "offline" | "mis
 const LIGHT_COMMANDS = new Set<Command["type"]>(["move", "lift", "rotate", "adjustCounter"]);
 const ACK_TIMEOUT_MS = 8000;
 const CONNECT_GRACE_MS = 6000;
+const DRAG_SEND_GAP_MS = 50;
 const HOST = partyHost();
 
 function seatKey(code: string) {
@@ -36,6 +37,8 @@ export function useTable(code: string) {
   const tableRef = useRef<TableSnapshot | null>(null);
   const waitingRef = useRef(new Map<string, (result: TableSnapshot | null) => void>());
   const anchorRef = useRef<{ anchor: Anchor; sentAt: number } | null>(null);
+  const dragSentRef = useRef(0);
+  const [remoteDrags, setRemoteDrags] = useState<Record<string, { pieceId: string; x: number; y: number }>>({});
 
   useEffect(() => {
     if (!HOST || !ready || !seatId) return;
@@ -65,6 +68,17 @@ export function useTable(code: string) {
       if (message.t === "hands") {
         const merged = tableRef.current ? { ...tableRef.current, liveHands: message.hands } : null;
         if (merged) { tableRef.current = merged; setTable(merged); }
+        return;
+      }
+      if (message.t === "drag") {
+        const { seatId: mover, pieceId, x, y } = message;
+        setRemoteDrags((current) => {
+          if (pieceId) return { ...current, [mover]: { pieceId, x, y } };
+          if (!(mover in current)) return current;
+          const rest = { ...current };
+          delete rest[mover];
+          return rest;
+        });
         return;
       }
       if (message.t === "gone") {
@@ -139,5 +153,14 @@ export function useTable(code: string) {
     socket.send(JSON.stringify({ t: "hand", anchor, grabbing } satisfies ClientMessage));
   }, [seatId]);
 
-  return { ready, seatId, table, status, pending, fatal, join, send, setAnchor, settleMs: PRESENCE.settleMs };
+  const setDrag = useCallback((pieceId: string | null, x: number, y: number) => {
+    const socket = socketRef.current;
+    if (!seatId || !socket || socket.readyState !== socket.OPEN) return;
+    const now = performance.now();
+    if (pieceId && now - dragSentRef.current < DRAG_SEND_GAP_MS) return;
+    dragSentRef.current = pieceId ? now : 0;
+    socket.send(JSON.stringify({ t: "drag", pieceId, x, y } satisfies ClientMessage));
+  }, [seatId]);
+
+  return { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, remoteDrags, settleMs: PRESENCE.settleMs };
 }

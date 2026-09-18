@@ -37,8 +37,12 @@ import { ClearVoteBanner, TableMenu } from "./table-menu";
 export default function TableRoom() {
   const params = useParams<{ code: string }>();
   const code = String(params.code ?? "").toUpperCase();
-  const { ready, seatId, table, status, pending, fatal, join, send, setAnchor } = useTable(code);
-  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({ send, setAnchor });
+  const { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, remoteDrags } = useTable(code);
+  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({ send, setAnchor, setDrag });
+  const remoteAt = useMemo(
+    () => Object.fromEntries(Object.values(remoteDrags).map((drag) => [drag.pieceId, { x: drag.x, y: drag.y }])) as Record<string, { x: number; y: number }>,
+    [remoteDrags],
+  );
 
   const storedName = useStoredValue("ban-bai:name");
   const [typedName, setTypedName] = useState<string | null>(null);
@@ -73,7 +77,7 @@ export default function TableRoom() {
     const layout = {
       piece: (id: string) => {
         const piece = table.pieces.find((item) => item.id === id);
-        return piece ? localPositions[id] ?? { x: piece.x, y: piece.y } : undefined;
+        return piece ? localPositions[id] ?? remoteAt[id] ?? { x: piece.x, y: piece.y } : undefined;
       },
       seat: (id: string) => seatPoints.get(id),
       fallback: { x: 0.5, y: 0.5 },
@@ -82,7 +86,7 @@ export default function TableRoom() {
       .filter((hand) => hand.seatId !== seatId)
       .map((hand) => ({ ...hand, seat: table.seats.find((seat) => seat.id === hand.seatId) }))
       .filter((hand) => Boolean(hand.seat));
-  }, [localPositions, now, seatId, seatPoints, table]);
+  }, [localPositions, remoteAt, now, seatId, seatPoints, table]);
 
   async function submitJoin(event: FormEvent) {
     event.preventDefault();
@@ -202,7 +206,7 @@ export default function TableRoom() {
                   }
                   filled={(slot) => {
                     const piece = table?.pieces.find((item) => item.ownerId === seat.id && item.slot === slot);
-                    if (!piece || !piece.cards.length || held === piece.id) return null;
+                    if (!piece || !piece.cards.length || held === piece.id || remoteAt[piece.id]) return null;
                     return <SlotCard piece={piece} pieceProps={pieceProps} send={send} />;
                   }}
                 />
@@ -210,8 +214,8 @@ export default function TableRoom() {
             );
           })}
 
-          {table?.pieces.filter((piece) => !piece.slot || held === piece.id).map((piece) => {
-            const at = localPositions[piece.id] ?? { x: piece.x, y: piece.y };
+          {table?.pieces.filter((piece) => !piece.slot || held === piece.id || remoteAt[piece.id]).map((piece) => {
+            const at = localPositions[piece.id] ?? remoteAt[piece.id] ?? { x: piece.x, y: piece.y };
             return (
               <PieceOnTable
                 key={piece.id}

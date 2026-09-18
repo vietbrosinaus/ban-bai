@@ -28,10 +28,12 @@ function hitTest(clientX: number, clientY: number, ignoreId?: string): DropTarge
 export function useTablePointer({
   send,
   setAnchor,
+  setDrag,
   peelDefault = false,
 }: {
   send: (command: Command) => Promise<unknown>;
   setAnchor: (anchor: Anchor, grabbing?: boolean) => void;
+  setDrag: (pieceId: string | null, x: number, y: number) => void;
   peelDefault?: boolean;
 }) {
   const feltRef = useRef<HTMLDivElement | null>(null);
@@ -85,13 +87,14 @@ export function useTablePointer({
     dragRef.current = null;
     setTakeCount(0);
     setAnchor({ kind: "piece", id: drag.pieceId }, false);
+    if (!drop || !drag.moved) setDrag(null, 0, 0);
     setDragCardId(null);
     setHoverTarget(null);
     if (!drop || !drag.moved) { setHeld(null); setLocalPositions({}); return; }
 
     const target = hitTest(clientX, clientY, drag.pieceId);
     const { x, y } = toFraction(clientX, clientY);
-    const finish = () => { setHeld(null); setLocalPositions({}); };
+    const finish = () => { setHeld(null); setLocalPositions({}); setDrag(null, 0, 0); };
 
     if (target?.kind === "hand") void send({ type: "takeToHand", pieceId: drag.pieceId, count: drag.peel ? drag.count : 99 }).finally(finish);
     else if (drag.peel && drag.count < drag.cards) void send({ type: "split", pieceId: drag.pieceId, count: drag.count, x: x - drag.dx, y: y - drag.dy }).finally(finish);
@@ -130,7 +133,9 @@ export function useTablePointer({
       }
       setHoverTarget(hitTest(event.clientX, event.clientY, drag.pieceId));
       const { x, y } = toFraction(event.clientX, event.clientY);
-      setLocalPositions({ [drag.pieceId]: onTable(x - drag.dx, y - drag.dy) });
+      const at = onTable(x - drag.dx, y - drag.dy);
+      setLocalPositions({ [drag.pieceId]: at });
+      if (!drag.peel) setDrag(drag.pieceId, at.x, at.y);
     },
     onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event.pointerId, event.clientX, event.clientY, true),
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event.pointerId, event.clientX, event.clientY, false),

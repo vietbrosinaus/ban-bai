@@ -13,11 +13,13 @@ export type DoorReply = { seatId: string } | { error: string };
 export type ClientMessage =
   | { t: "command"; nonce: string; command: Command }
   | { t: "hand"; anchor: Anchor; grabbing: boolean }
+  | { t: "drag"; pieceId: string | null; x: number; y: number }
   | { t: "resync" };
 
 export type ServerMessage =
   | { t: "snapshot"; snapshot: TableSnapshot }
   | { t: "hands"; hands: Hand[] }
+  | { t: "drag"; seatId: string; pieceId: string | null; x: number; y: number }
   | { t: "ack"; nonce: string }
   | { t: "reject"; nonce: string; message: string }
   | { t: "gone"; message: string };

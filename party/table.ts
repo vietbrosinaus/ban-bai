@@ -119,6 +119,11 @@ export class Table extends Server {
       return;
     }
 
+    if (message.t === "drag") {
+      this.broadcast(JSON.stringify({ t: "drag", seatId, pieceId: message.pieceId, x: message.x, y: message.y } satisfies ServerMessage), [connection.id]);
+      return;
+    }
+
     if (message.t !== "command") return;
 
     try {
@@ -135,8 +140,10 @@ export class Table extends Server {
   }
 
   onClose(connection: Connection) {
-    if (!seatOfConnection(connection)) return;
+    const seatId = seatOfConnection(connection);
+    if (!seatId) return;
     this.pushHands(connection.id);
+    this.broadcast(JSON.stringify({ t: "drag", seatId, pieceId: null, x: 0, y: 0 } satisfies ServerMessage), [connection.id]);
   }
 
   onError(connection: Connection) {

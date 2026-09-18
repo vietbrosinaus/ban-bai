@@ -23,6 +23,7 @@ function TablePiece({
       data-held={held || undefined}
       className={cn(
         "absolute -translate-x-1/2 -translate-y-1/2 touch-none select-none",
+        !held && "transition-[left,top,rotate] duration-100 ease-linear",
         held && "z-50 drop-shadow-[0_1.1rem_1.6rem_rgba(0,0,0,0.5)] [cursor:url(/cursor-hand-grab.svg)_10_7,grabbing]",
         className
       )}
