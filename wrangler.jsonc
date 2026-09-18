@@ -7,7 +7,7 @@
   "observability": { "enabled": true },
   "dev": { "port": 1999 },
   "durable_objects": {
-    "bindings": [{ "name": "Table", "class_name": "Table" }]
+    "bindings": [{ "name": "Main", "class_name": "Table" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Table"] }]
 }

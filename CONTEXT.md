@@ -31,7 +31,7 @@ Domain purity is checked by pattern: `Date.now`, `Math.random`, `crypto`, `fetch
 | `Clock` | `systemClock` |
 | `Randomness` | `webCryptoRandomness` |
 
-The room itself needs no repository port. A Durable Object *is* the single authoritative holder of one table, so `party/table.ts` keeps `TableState` in memory and mirrors it to the object's own SQLite storage. There is no database. The class extends `Server` from `partyserver`, and `wrangler.jsonc` binds it as `Table`, which is why room URLs read `/parties/table/<code>`.
+The room itself needs no repository port. A Durable Object *is* the single authoritative holder of one table, so `party/table.ts` keeps `TableState` in memory and mirrors it to the object's own SQLite storage. There is no database. The class extends `Server` from `partyserver`, and `wrangler.jsonc` binds it as `Main`, which is why room URLs read `/parties/main/<code>`. The binding name is the URL; the class name is where the data lives, so renaming the binding never loses a table.
 
 ## Transport
 

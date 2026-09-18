@@ -1,7 +1,7 @@
 const DEV_PARTY_HOST = "localhost:1999";
 const LOCAL_HOST = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$/;
 
-export const PARTY_NAME = "table";
+export const PARTY_NAME = "main";
 
 export const MISSING_HOST = "Chưa cấu hình máy chủ bàn. Đặt NEXT_PUBLIC_PARTY_HOST rồi deploy lại.";
 

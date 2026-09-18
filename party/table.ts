@@ -10,7 +10,7 @@ import { webCryptoRandomness } from "@/lib/adapters/web-crypto-randomness";
 
 const STATE_KEY = "table";
 
-type SeatState = { seatId: string };
+type SeatState = { seatId: string; hand?: Hand };
 
 function cleanName(value: unknown) {
   return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 24);
@@ -20,13 +20,18 @@ function reply(body: DoorReply, status: number) {
   return Response.json(body, { status, headers: { "access-control-allow-origin": "*" } });
 }
 
+function stateOf(connection: Connection) {
+  return (connection.state as SeatState | null) ?? { seatId: "" };
+}
+
 function seatOfConnection(connection: Connection) {
-  return (connection.state as SeatState | null)?.seatId ?? "";
+  return stateOf(connection).seatId;
 }
 
 export class Table extends Server {
+  static options = { hibernate: true };
+
   state: TableState | null = null;
-  hands = new Map<string, Hand>();
 
   async onStart() {
     this.state = (await this.ctx.storage.get<TableState>(STATE_KEY)) ?? null;
@@ -108,7 +113,8 @@ export class Table extends Server {
     }
 
     if (message.t === "hand") {
-      this.hands.set(seatId, { seatId, anchor: message.anchor, grabbing: message.grabbing, changedAt: systemClock.now() });
+      const hand: Hand = { seatId, anchor: message.anchor, grabbing: message.grabbing, changedAt: systemClock.now() };
+      connection.setState({ ...stateOf(connection), hand } satisfies SeatState);
       this.pushHands();
       return;
     }
@@ -129,22 +135,12 @@ export class Table extends Server {
   }
 
   onClose(connection: Connection) {
-    const seatId = seatOfConnection(connection);
-    if (!seatId || this.stillHere(seatId, connection)) return;
-    this.hands.delete(seatId);
-    this.pushHands();
+    if (!seatOfConnection(connection)) return;
+    this.pushHands(connection.id);
   }
 
   onError(connection: Connection) {
     this.onClose(connection);
-  }
-
-  private stillHere(seatId: string, leaving: Connection) {
-    for (const open of this.getConnections()) {
-      if (open.id === leaving.id) continue;
-      if (seatOfConnection(open) === seatId) return true;
-    }
-    return false;
   }
 
   private seat(state: TableState, seatId: string, name: string, role: SeatRole) {
@@ -160,9 +156,17 @@ export class Table extends Server {
     await this.ctx.storage.put(STATE_KEY, next);
   }
 
-  private liveHands() {
+  private liveHands(leavingId?: string) {
     const floor = systemClock.now() - PRESENCE.goHomeMs;
-    return [...this.hands.values()].filter((hand) => hand.changedAt > floor);
+    const latest = new Map<string, Hand>();
+    for (const connection of this.getConnections()) {
+      if (connection.id === leavingId) continue;
+      const hand = stateOf(connection).hand;
+      if (!hand || hand.changedAt <= floor) continue;
+      const known = latest.get(hand.seatId);
+      if (!known || hand.changedAt > known.changedAt) latest.set(hand.seatId, hand);
+    }
+    return [...latest.values()];
   }
 
   private snapshotFor(seatId: string) {
@@ -179,7 +183,7 @@ export class Table extends Server {
     }
   }
 
-  private pushHands() {
-    this.broadcast(JSON.stringify({ t: "hands", hands: this.liveHands() } satisfies ServerMessage));
+  private pushHands(leavingId?: string) {
+    this.broadcast(JSON.stringify({ t: "hands", hands: this.liveHands(leavingId) } satisfies ServerMessage), leavingId ? [leavingId] : undefined);
   }
 }
