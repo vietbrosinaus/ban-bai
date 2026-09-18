@@ -150,19 +150,20 @@ export default function TableRoom() {
             return (
               <div
                 key={seat.id}
-                data-seat={seat.id}
                 className={cn(
-                  "absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-2xl transition-shadow hover:drop-shadow-[0_0_0.6rem_rgba(244,201,93,0.35)]",
+                  "absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-2xl transition-shadow",
                   below && "flex-col-reverse",
                 )}
                 style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
               >
                 <SeatBadge
+                  data-seat={seat.id}
                   name={seat.name}
                   colour={seat.colour}
                   handCount={table?.handCounts[seat.id] ?? 0}
                   seatNumber={seat.index + 1}
                   self={seat.id === seatId}
+                  className="transition-shadow hover:shadow-[0_0_0_2px_var(--gilt)]"
                 />
                 <SeatBoard
                   seatId={seat.id}
@@ -173,32 +174,22 @@ export default function TableRoom() {
                         {(table?.counters ?? [])
                           .filter((counter) => counter.slotted && counter.ownerId === seat.id)
                           .map((counter) => (
-                            <SeatCounter key={counter.id} counter={counter} seats={players} mySeatId={seatId} send={send} counterProps={counterProps} />
+                            <SeatCounter key={counter.id} counter={counter} seats={players} mySeatId={seatId} self={seat.id === seatId} send={send} counterProps={counterProps} />
                           ))}
                       </div>
                     ) : undefined
                   }
                   filled={(slot) => {
                     const piece = table?.pieces.find((item) => item.ownerId === seat.id && item.slot === slot);
-                    if (!piece || !piece.cards.length) return null;
-                    const top = piece.cards[piece.cards.length - 1];
-                    return (
-                      <div {...pieceProps(piece)} className="relative grid h-full w-full place-items-center p-0.5">
-                        <PlayingCard cardId={top.id} faceDown={!top.faceUp} size="xs" className="h-full w-auto" />
-                        {piece.cards.length > 1 && (
-                          <Badge variant="destructive" className="absolute -top-1.5 -right-1.5 h-4 min-w-4 justify-center px-1 text-[0.5rem] tabular-nums">
-                            {piece.cards.length}
-                          </Badge>
-                        )}
-                      </div>
-                    );
+                    if (!piece || !piece.cards.length || held === piece.id) return null;
+                    return <SlotCard piece={piece} pieceProps={pieceProps} send={send} />;
                   }}
                 />
               </div>
             );
           })}
 
-          {table?.pieces.filter((piece) => !piece.slot).map((piece) => {
+          {table?.pieces.filter((piece) => !piece.slot || held === piece.id).map((piece) => {
             const at = localPositions[piece.id] ?? { x: piece.x, y: piece.y };
             return (
               <PieceOnTable
@@ -435,12 +426,14 @@ function SeatCounter({
   counter,
   seats,
   mySeatId,
+  self,
   send,
   counterProps,
 }: {
   counter: { id: string; label: string; value: number; x: number; y: number };
   seats: Array<{ id: string; name: string; colour: string }>;
   mySeatId: string;
+  self: boolean;
   send: ReturnType<typeof useTable>["send"];
   counterProps: ReturnType<typeof useTablePointer>["counterProps"];
 }) {
@@ -456,7 +449,7 @@ function SeatCounter({
             <CounterChip
               label={counter.label}
               value={counter.value}
-              className="size-8 shadow-none"
+              className={cn("shadow-none", self ? "size-13" : "size-9")}
               onClick={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}
             />
           </div>
@@ -510,54 +503,24 @@ function CounterOnTable({
   );
 }
 
-function PieceOnTable({
+function CardShell({
   piece,
-  x,
-  y,
-  held,
-  playedBy,
-  pieceProps,
   send,
+  children,
 }: {
   piece: Piece;
-  x: number;
-  y: number;
-  held: boolean;
-  playedBy?: { name: string; colour: string };
-  pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
   send: ReturnType<typeof useTable>["send"];
+  children: (open: () => void) => React.ReactNode;
 }) {
   const [info, setInfo] = useState(false);
   const items = PIECE_MENU.filter((item) => item.when(piece));
   const top = piece.cards[piece.cards.length - 1];
   const readable = top?.faceUp ? top.id : undefined;
-  const single = piece.cards.length === 1 && !piece.tag;
 
   return (
     <>
       <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <TablePiece
-            x={x}
-            y={y}
-            rotation={piece.rotation}
-            held={held}
-            {...pieceProps(piece)}
-            onClick={() => { if (readable) setInfo(true); }}
-            className="group"
-          >
-            <CardStack cards={piece.cards} label={piece.label} className="transition-transform group-hover:-translate-y-0.5" />
-            {single && playedBy ? (
-              <Badge
-                variant="secondary"
-                className="absolute top-full left-1/2 mt-1.5 -translate-x-1/2 border border-white/10 bg-felt-deep/85 text-[0.5rem] whitespace-nowrap"
-                style={{ color: playedBy.colour }}
-              >
-                {playedBy.name}
-              </Badge>
-            ) : null}
-          </TablePiece>
-        </ContextMenuTrigger>
+        <ContextMenuTrigger asChild>{children(() => { if (readable) setInfo(true); })}</ContextMenuTrigger>
         <ContextMenuContent className="w-52">
           <ContextMenuLabel className="flex items-center gap-2">
             <Layers className="size-3.5" />
@@ -587,5 +550,81 @@ function PieceOnTable({
       </ContextMenu>
       {readable ? <CardInfoDialog cardId={readable} open={info} onOpenChange={setInfo} /> : null}
     </>
+  );
+}
+
+function SlotCard({
+  piece,
+  pieceProps,
+  send,
+}: {
+  piece: Piece;
+  pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
+  send: ReturnType<typeof useTable>["send"];
+}) {
+  const top = piece.cards[piece.cards.length - 1];
+  return (
+    <CardShell piece={piece} send={send}>
+      {(open) => (
+        <div
+          {...pieceProps(piece)}
+          onClick={open}
+          className="relative grid h-full w-full place-items-center p-0.5 transition-transform hover:-translate-y-0.5"
+        >
+          <PlayingCard cardId={top.id} faceDown={!top.faceUp} size="xs" className="h-full w-auto" />
+          {piece.cards.length > 1 && (
+            <Badge variant="destructive" className="absolute -top-1.5 -right-1.5 h-4 min-w-4 justify-center px-1 text-[0.5rem] tabular-nums">
+              {piece.cards.length}
+            </Badge>
+          )}
+        </div>
+      )}
+    </CardShell>
+  );
+}
+
+function PieceOnTable({
+  piece,
+  x,
+  y,
+  held,
+  playedBy,
+  pieceProps,
+  send,
+}: {
+  piece: Piece;
+  x: number;
+  y: number;
+  held: boolean;
+  playedBy?: { name: string; colour: string };
+  pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
+  send: ReturnType<typeof useTable>["send"];
+}) {
+  const single = piece.cards.length === 1 && !piece.tag;
+  return (
+    <CardShell piece={piece} send={send}>
+      {(open) => (
+        <TablePiece
+          x={x}
+          y={y}
+          rotation={piece.rotation}
+          held={held}
+          {...pieceProps(piece)}
+          onClick={open}
+          className="group"
+        >
+          <CardStack cards={piece.cards} label={piece.label} className="transition-transform group-hover:-translate-y-0.5" />
+          {single && playedBy ? (
+            <Badge
+              variant="secondary"
+              className="absolute top-full left-1/2 mt-1.5 -translate-x-1/2 border border-white/10 bg-felt-deep/85 text-[0.5rem] whitespace-nowrap"
+              style={{ color: playedBy.colour }}
+            >
+              {playedBy.name}
+            </Badge>
+          ) : null}
+        </TablePiece>
+      )}
+    </CardShell>
   );
 }

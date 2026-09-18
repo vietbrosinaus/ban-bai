@@ -54,8 +54,8 @@ function SeatBoard({
                 className={cn(
                   "grid place-items-center rounded-[0.3rem] border border-dashed border-white/20 bg-black/20 transition-colors",
                   "hover:border-gilt/70 hover:bg-gilt/10",
-                  slot === "judgement" ? "h-11 w-[5.5rem]" : "h-11 w-8",
-                  self && (slot === "judgement" ? "h-[3.85rem] w-[7.5rem]" : "h-[3.85rem] w-11"),
+                  slot === "judgement" ? "h-11 w-[3.6rem]" : "h-11 w-8",
+                  self && (slot === "judgement" ? "h-[3.85rem] w-[5rem]" : "h-[3.85rem] w-11"),
                   content && "border-solid border-white/30 bg-transparent",
                 )}
               >
@@ -69,8 +69,8 @@ function SeatBoard({
               data-counter-zone=""
               title="Ô đếm"
               className={cn(
-                "flex min-w-11 items-center justify-center gap-1 rounded-full border border-dashed border-white/20 bg-black/20 px-1 transition-colors hover:border-gilt/70 hover:bg-gilt/10",
-                self ? "h-[3.85rem]" : "h-11",
+                "flex aspect-square items-center justify-center gap-1 rounded-full border border-dashed border-white/20 bg-black/20 transition-colors hover:border-gilt/70 hover:bg-gilt/10",
+                self ? "size-[3.85rem]" : "size-11",
               )}
             >
               {counters ?? <CircleDot className="size-3.5 text-white/30" />}

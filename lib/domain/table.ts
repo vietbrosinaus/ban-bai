@@ -1,4 +1,5 @@
 import type { CardId, CardRef, Counter, Piece, Point, Seat, SeatRole, SeatSlot } from "./card";
+import { cardFace } from "./deck";
 import { starterPieces, type TableDeck } from "./setup";
 
 export type PieceTag = "generals" | "deck" | "discard" | "seat";
@@ -188,6 +189,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
     case "placeInSlot": {
       const piece = pieceOf(state, command.pieceId);
       const seat = seatOf(state, command.seatId);
+      guardSlot(command.slot, piece.cards);
       const occupant = state.pieces.find((item) => item.ownerId === seat.id && item.slot === command.slot && item.id !== piece.id);
       if (occupant && command.slot !== "judgement") {
         const merged = { ...occupant, cards: [...occupant.cards, ...piece.cards] };
@@ -206,6 +208,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       const card = hand.find((item) => item.id === command.cardId);
       if (!card) throw new RuleError("Lá đó không có trên tay bạn.", 409);
       const seat = seatOf(state, command.seatId);
+      guardSlot(command.slot, [card]);
       const hands = { ...state.hands, [ctx.actorId]: hand.filter((item) => item.id !== card.id) };
       const occupant = state.pieces.find((item) => item.ownerId === seat.id && item.slot === command.slot);
       const pieces = occupant
@@ -437,6 +440,14 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
 }
 
 export const MAX_PLAYERS = 10;
+
+const GENERAL_SLOTS = new Set<SeatSlot>(["general1", "general2"]);
+
+function guardSlot(slot: SeatSlot, cards: CardRef[]) {
+  if (!GENERAL_SLOTS.has(slot)) return;
+  const wrong = cards.find((card) => cardFace(card.id)?.kind !== "general");
+  if (wrong) throw new RuleError("Ô tướng chỉ nhận lá tướng.", 409);
+}
 
 const SEAT_SLOT_TEXT: Record<SeatSlot, string> = {
   general1: "tướng 1",
