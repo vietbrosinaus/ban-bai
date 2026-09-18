@@ -9,12 +9,13 @@ import { PRESENCE, nextAnchorToSend, type Anchor } from "@/lib/domain/presence";
 import type { SeatRole } from "@/lib/domain/card";
 import type { ClientMessage, ServerMessage, TableSnapshot } from "@/lib/domain/protocol";
 import type { Command } from "@/lib/domain/table";
-import { PARTY_NAME, partyHost, tableDoor } from "@/lib/party-host";
+import { MISSING_HOST, PARTY_NAME, partyHost, tableDoor } from "@/lib/party-host";
 
 export type TableStatus = "joining" | "live" | "reconnecting" | "offline" | "missing";
 
 const LIGHT_COMMANDS = new Set<Command["type"]>(["move", "lift", "rotate", "adjustCounter"]);
 const ACK_TIMEOUT_MS = 8000;
+const CONNECT_GRACE_MS = 6000;
 
 function seatKey(code: string) {
   return `ban-bai:${code}:seat`;
@@ -28,7 +29,7 @@ export function useTable(code: string) {
   const [table, setTable] = useState<TableSnapshot | null>(null);
   const [status, setStatus] = useState<TableStatus>("joining");
   const [pending, setPending] = useState<string | null>(null);
-  const [fatal, setFatal] = useState("");
+  const [fatal, setFatal] = useState(partyHost() ? "" : MISSING_HOST);
 
   const socketRef = useRef<PartySocket | null>(null);
   const tableRef = useRef<TableSnapshot | null>(null);
@@ -36,12 +37,17 @@ export function useTable(code: string) {
   const anchorRef = useRef<{ anchor: Anchor; sentAt: number } | null>(null);
 
   useEffect(() => {
+    const host = partyHost();
+    if (!host) { setStatus("missing"); setFatal(MISSING_HOST); return; }
     if (!ready || !seatId) return;
 
-    const socket = new PartySocket({ host: partyHost(), party: PARTY_NAME, room: code, query: { seatId } });
+    const socket = new PartySocket({ host, party: PARTY_NAME, room: code, query: { seatId } });
+    const stall = window.setTimeout(() => {
+      if (socket.readyState !== socket.OPEN) setFatal(`Không kết nối được tới máy chủ bàn (${host}).`);
+    }, CONNECT_GRACE_MS);
     socketRef.current = socket;
 
-    const onOpen = () => setStatus("live");
+    const onOpen = () => { window.clearTimeout(stall); setFatal(""); setStatus("live"); };
     const onClose = () => setStatus(navigator.onLine ? "reconnecting" : "offline");
     const onMessage = (event: MessageEvent<string>) => {
       let message: ServerMessage;
@@ -78,6 +84,7 @@ export function useTable(code: string) {
     socket.addEventListener("message", onMessage);
 
     return () => {
+      window.clearTimeout(stall);
       socket.removeEventListener("open", onOpen);
       socket.removeEventListener("close", onClose);
       socket.removeEventListener("message", onMessage);
