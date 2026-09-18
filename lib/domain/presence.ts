@@ -20,9 +20,9 @@ export type PresenceLayout = {
 };
 
 export const PRESENCE = {
-  sendGapMs: 200,
+  sendGapMs: 100,
   settleMs: 150,
-  glideMs: 280,
+  glideMs: 120,
   idleFadeMs: 15_000,
   goHomeMs: 45_000,
   crowdRadius: 0.02,

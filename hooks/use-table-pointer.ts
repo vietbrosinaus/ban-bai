@@ -70,7 +70,9 @@ export function useTablePointer({
       const { x, y } = toFraction(event.clientX, event.clientY);
       const target = event.target instanceof Element ? event.target.closest("[data-piece]") : null;
       const pieceId = target instanceof HTMLElement ? target.dataset.piece : undefined;
-      settle(pieceId ? { kind: "piece", id: pieceId } : { kind: "point", x, y });
+      const anchor: Anchor = pieceId ? { kind: "piece", id: pieceId } : { kind: "point", x, y };
+      setAnchor(anchor);
+      settle(anchor);
     },
     onPointerLeave: () => {
       if (settleRef.current !== null) window.clearTimeout(settleRef.current);

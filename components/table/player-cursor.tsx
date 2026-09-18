@@ -47,7 +47,7 @@ function PlayerCursor({
       {...props}
       className={cn(
         "pointer-events-none absolute z-50 -translate-x-1 -translate-y-0.5",
-        !self && "ease-out [transition-property:left,top]",
+        !self && "ease-linear [transition-property:left,top]",
         className
       )}
       style={{
