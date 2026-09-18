@@ -172,4 +172,3 @@ export function createTamQuocSatDeck(): PrintedCard[] {
   });
 }
 
-export const TAM_QUOC_SAT_DECK_SIZE = prints.length;

@@ -41,9 +41,9 @@ function Label({ children }: { children: React.ReactNode }) {
 export default function Primitives() {
   return (
     <main className="min-h-svh bg-[#0a1713] px-[clamp(1rem,4vw,3rem)] py-8 text-[#f2ede0]">
-      <h1 className="text-xl font-bold">Table primitives</h1>
+      <h1 className="text-xl font-bold">Bàn Bài design system</h1>
       <p className="mb-2 max-w-[70ch] text-xs text-white/50">
-        Every table surface is built from these. One component per idea, variants instead of one-off CSS. If something on the table does not appear here, it does not exist yet.
+        Every table surface is built from these. One component per idea, variants instead of one-off CSS. If something on the table does not appear here, it does not exist.
       </p>
 
       <Row title="PlayingCard" kind="size" note="One aspect ratio (5:7), width-only variants. Text scales with the card, so a rank stays readable at every size.">

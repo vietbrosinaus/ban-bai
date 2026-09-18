@@ -73,6 +73,3 @@ export function isRed(suit: Suit) {
   return suit === "hearts" || suit === "diamonds";
 }
 
-export function topOf(piece: Piece): CardRef | undefined {
-  return piece.cards[piece.cards.length - 1];
-}

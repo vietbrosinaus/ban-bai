@@ -78,9 +78,6 @@ export function deckOf(kind: DeckKind): CardId[] {
   return cards.filter((card) => card.kind === "play" && !card.id.startsWith("classic-")).map((card) => card.id);
 }
 
-export function deckSize(kind: DeckKind) {
-  return deckOf(kind).length;
-}
 
 export function cardRules(id: CardId): CardRules | undefined {
   const card = cardFace(id);
@@ -95,6 +92,3 @@ export function cardRules(id: CardId): CardRules | undefined {
   return { kind: "play", category: info.category, nameEn: info.nameEn, ruleVi: info.ruleVi, ruleEn: info.ruleEn };
 }
 
-export function hasRules(id: CardId) {
-  return Boolean(cardRules(id));
-}

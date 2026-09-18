@@ -36,10 +36,6 @@ export function sameAnchor(a: Anchor, b: Anchor) {
   return true;
 }
 
-export function seatRing(index: number, total: number): Point {
-  const angle = (index / Math.max(1, total)) * Math.PI * 2 - Math.PI / 2;
-  return { x: 0.5 + Math.cos(angle) * 0.42, y: 0.5 + Math.sin(angle) * 0.38 };
-}
 
 export function crowdOffset(rank: number, sharing: number): Point {
   if (sharing < 2) return { x: 0, y: 0 };

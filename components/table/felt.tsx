@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const feltVariants = cva(
-  "relative overflow-hidden bg-[radial-gradient(ellipse_at_50%_42%,var(--felt-bright),var(--felt)_56%,var(--felt-deep))]",
+  "relative overflow-hidden bg-[radial-gradient(ellipse_at_50%_42%,var(--felt-bright),var(--felt)_56%,var(--felt-deep))] [cursor:url(/cursor-hand.svg)_10_5,grab] [&_*]:[cursor:inherit] active:[cursor:url(/cursor-hand-grab.svg)_10_7,grabbing]",
   {
     variants: {
       shape: {
