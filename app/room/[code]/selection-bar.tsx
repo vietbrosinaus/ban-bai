@@ -1,12 +1,12 @@
 "use client";
 
-import { GalleryHorizontalEnd, HandGrab, Layers, SquareStack, Trash2, X } from "lucide-react";
+import { ChevronDown, GalleryHorizontalEnd, HandGrab, Layers, SquareStack, Trash2, X } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Command } from "@/lib/domain/table";
 
-export function SelectionBar({
+export function SelectionMenu({
   selection,
   discardId,
   watching,
@@ -19,39 +19,52 @@ export function SelectionBar({
   onClear: () => void;
   send: (command: Command) => Promise<unknown>;
 }) {
-  if (selection.length < 1) return null;
+  if (!selection.length) return null;
 
   async function run(command: Command) {
     if (await send(command)) onClear();
   }
 
   return (
-    <div className="absolute bottom-3 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-1.5 rounded-full border border-gilt/40 bg-felt-deep/95 px-3 py-2 shadow-lg backdrop-blur">
-      <Badge variant="secondary" className="tabular-nums">{selection.length} lá</Badge>
-      {watching ? (
-        <span className="px-1 text-xs text-white/50">ghế xem không thao tác được</span>
-      ) : (
-        <>
-          <Button size="xs" variant="ghost" disabled={selection.length < 2} onClick={() => void run({ type: "selectionStack", ids: selection })}>
-            <Layers />Gom lại
+    <div data-overlay="" className="absolute bottom-3 left-1/2 z-40 -translate-x-1/2">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" className="rounded-full shadow-lg">
+            <Layers />
+            {selection.length} lá đã chọn
+            <ChevronDown />
           </Button>
-          <Button size="xs" variant="ghost" onClick={() => void run({ type: "selectionSpread", ids: selection })}>
-            <GalleryHorizontalEnd />Trải ra
-          </Button>
-          <Button size="xs" variant="ghost" onClick={() => void run({ type: "selectionFlip", ids: selection })}>
-            <SquareStack />Lật
-          </Button>
-          <Button size="xs" variant="ghost" onClick={() => void run({ type: "selectionToHand", ids: selection })}>
-            <HandGrab />Cầm hết
-          </Button>
-          {discardId ? (
-            <Button size="xs" variant="ghost" onClick={() => void run({ type: "selectionToPile", ids: selection, pileId: discardId })}>
-              <Trash2 />Bỏ
-            </Button>
-          ) : null}
-        </>
-      )}
-      <Button size="icon-xs" variant="ghost" aria-label="Bỏ chọn" onClick={onClear}><X /></Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="center" side="top" className="w-48">
+          <DropdownMenuLabel className="text-[0.65rem]">Làm gì với {selection.length} lá</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {watching ? (
+            <DropdownMenuItem disabled>Ghế xem không thao tác được</DropdownMenuItem>
+          ) : (
+            <>
+              <DropdownMenuItem disabled={selection.length < 2} onSelect={() => void run({ type: "selectionStack", ids: selection })}>
+                <Layers />Gom lại
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void run({ type: "selectionSpread", ids: selection })}>
+                <GalleryHorizontalEnd />Trải ra
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void run({ type: "selectionFlip", ids: selection })}>
+                <SquareStack />Lật
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void run({ type: "selectionToHand", ids: selection })}>
+                <HandGrab />Cầm hết
+              </DropdownMenuItem>
+              {discardId ? (
+                <DropdownMenuItem onSelect={() => void run({ type: "selectionToPile", ids: selection, pileId: discardId })}>
+                  <Trash2 />Bỏ vào chồng bài bỏ
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuSeparator />
+            </>
+          )}
+          <DropdownMenuItem onSelect={onClear}><X />Bỏ chọn</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

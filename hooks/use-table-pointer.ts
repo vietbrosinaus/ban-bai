@@ -68,7 +68,7 @@ export function useTablePointer({
     onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
       const target = event.target as HTMLElement;
-      if (target.closest("[data-piece],[data-seat],[data-slot-seat],[data-slot=counter-chip]")) return;
+      if (target.closest("[data-piece],[data-seat],[data-slot-seat],[data-slot=counter-chip],[data-overlay]")) return;
       const from = toFraction(event.clientX, event.clientY);
       marqueeRef.current = { pointerId: event.pointerId, from, to: from };
       setMarquee(marqueeRef.current);

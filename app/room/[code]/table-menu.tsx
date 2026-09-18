@@ -109,7 +109,7 @@ export function ClearVoteBanner({
   const proposer = seats.find((seat) => seat.id === vote.proposedBy)?.name ?? "ai đó";
 
   return (
-    <div className="absolute top-3 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-gilt/40 bg-felt-deep/95 px-4 py-2 shadow-lg backdrop-blur">
+    <div data-overlay="" className="absolute top-3 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-gilt/40 bg-felt-deep/95 px-4 py-2 shadow-lg backdrop-blur">
       <Trash2 className="size-4 text-gilt" />
       <span className="text-xs">
         <b>{proposer}</b> đề nghị dọn bàn

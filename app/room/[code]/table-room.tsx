@@ -33,7 +33,7 @@ import { pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/ta
 import { PIECE_MENU } from "./piece-menu";
 import { HandUtilities } from "./table-controls";
 import { ClearVoteBanner, TableMenu } from "./table-menu";
-import { SelectionBar } from "./selection-bar";
+import { SelectionMenu } from "./selection-bar";
 
 export default function TableRoom() {
   const params = useParams<{ code: string }>();
@@ -266,7 +266,7 @@ export default function TableRoom() {
             />
           ) : null}
 
-          <SelectionBar
+          <SelectionMenu
             selection={selection}
             discardId={table?.pieces.find((piece) => piece.tag === "discard")?.id}
             watching={Boolean(watching)}
