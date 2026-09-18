@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useHydrated, useStoredValue } from "@/hooks/use-hydrated";
 
 const SEEN_KEY = "ban-bai:seen-how-to-play";
@@ -110,13 +111,14 @@ function HowToPlay() {
           Cách chơi
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85svh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-serif text-xl">Cách chơi</DialogTitle>
           <DialogDescription>
             Bàn này không bắt luật. Nó chỉ di chuyển bài, cả bàn tự giữ luật với nhau như ngồi chơi thật.
           </DialogDescription>
         </DialogHeader>
+        <ScrollArea className="-mr-4 pr-4 [&_[data-slot=scroll-area-viewport]]:max-h-[calc(85svh-10rem)]">
         <div className="grid gap-4">
           {SECTIONS.map((section) => (
             <section key={section.title} className="grid gap-0.5">
@@ -127,9 +129,10 @@ function HowToPlay() {
             </section>
           ))}
         </div>
-        <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+        <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
           Dùng chuột trên máy tính. Mở lại bảng này bất cứ lúc nào bằng nút Cách chơi ở góc trên.
         </p>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );

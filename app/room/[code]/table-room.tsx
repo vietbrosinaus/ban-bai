@@ -20,6 +20,7 @@ import { SeatBadge } from "@/components/table/seat-badge";
 import { SeatBoard } from "@/components/table/seat-board";
 import { TablePiece } from "@/components/table/table-piece";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -290,16 +291,18 @@ export default function TableRoom() {
         <aside className="hidden min-h-0 xl:grid">
           <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-1.5 rounded-2xl border border-white/10 bg-felt-deep/40 p-3">
             <h2 className="text-[0.6rem] tracking-wider text-white/40 uppercase">Diễn biến</h2>
-            <ol className="min-h-0 overflow-y-auto text-[0.7rem] leading-relaxed">
-              {[...(table?.log ?? [])].reverse().map((entry) => (
-                <li key={entry.id} className="border-b border-white/5 py-1 text-white/60 last:border-0">
-                  <b className="font-semibold" style={{ color: table?.seats.find((seat) => seat.id === entry.actorId)?.colour ?? "var(--gilt)" }}>
-                    {table?.seats.find((seat) => seat.id === entry.actorId)?.name ?? "bàn"}
-                  </b>{" "}
-                  {entry.text}
-                </li>
-              ))}
-            </ol>
+            <ScrollArea className="min-h-0 [&_[data-slot=scroll-area-thumb]]:bg-white/20">
+              <ol className="pr-3 text-[0.7rem] leading-relaxed">
+                {[...(table?.log ?? [])].reverse().map((entry) => (
+                  <li key={entry.id} className="border-b border-white/5 py-1 text-white/60 last:border-0">
+                    <b className="font-semibold" style={{ color: table?.seats.find((seat) => seat.id === entry.actorId)?.colour ?? "var(--gilt)" }}>
+                      {table?.seats.find((seat) => seat.id === entry.actorId)?.name ?? "bàn"}
+                    </b>{" "}
+                    {entry.text}
+                  </li>
+                ))}
+              </ol>
+            </ScrollArea>
           </section>
         </aside>
       </div>

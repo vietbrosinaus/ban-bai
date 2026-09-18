@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { SuitMark } from "@/components/table/suit-mark";
 import { MetaList } from "@/components/ui/meta-list";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { CATEGORY_LABEL, ROLE_LABEL, cardFace, cardRules } from "@/lib/domain/deck";
 import { FACTION_LABEL, type CardId } from "@/lib/domain/card";
 import { cn } from "@/lib/utils";
@@ -130,14 +131,16 @@ function CardInfoDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {children ? <DialogTrigger asChild>{children}</DialogTrigger> : null}
-      <DialogContent className="max-h-[calc(100dvh-2rem)] gap-4 overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="gap-4 sm:max-w-2xl">
         <DialogHeader className="sr-only">
           <DialogTitle>{card?.name ?? cardId}</DialogTitle>
           <DialogDescription>
-            {rules?.kind === "general" ? `${FACTION_LABEL[rules.faction]}, ${rules.maxHp} HP` : rules?.kind === "play" ? rules.nameEn : "Khong co luat"}
+            {rules?.kind === "general" ? `${FACTION_LABEL[rules.faction]}, ${rules.maxHp} HP` : rules?.kind === "play" ? rules.nameEn : "Không có luật"}
           </DialogDescription>
         </DialogHeader>
-        <CardInfo cardId={cardId} />
+        <ScrollArea className="-mr-4 pr-4 [&_[data-slot=scroll-area-viewport]]:max-h-[calc(100dvh-5rem)]">
+          <CardInfo cardId={cardId} />
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );
