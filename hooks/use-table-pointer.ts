@@ -157,7 +157,7 @@ export function useTablePointer({
 
     const target = hitTest(event.clientX, event.clientY);
     const faceUp = event.shiftKey;
-    if (target?.kind === "slot") void send({ type: "playToSlot", cardId: drag.cardId, seatId: target.seatId, slot: target.slot, faceUp: true });
+    if (target?.kind === "slot") void send({ type: "playToSlot", cardId: drag.cardId, seatId: target.seatId, slot: target.slot, faceUp });
     else if (target?.kind === "piece") void send({ type: "playOntoPiece", cardId: drag.cardId, pieceId: target.id, faceUp });
     else if (target?.kind === "seat") void send({ type: "giveToSeat", cardId: drag.cardId, seatId: target.id });
     else if (target?.kind === "felt") {

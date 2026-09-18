@@ -383,8 +383,9 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
     case "giveToSeat": {
       const hand = state.hands[ctx.actorId] ?? [];
       const card = hand.find((item) => item.id === command.cardId);
-      if (!card) throw new RuleError("That card is not in your hand.", 409);
+      if (!card) throw new RuleError("Lá đó không có trên tay bạn.", 409);
       const target = seatOf(state, command.seatId);
+      if (target.id === ctx.actorId) return state;
       const hands = {
         ...state.hands,
         [ctx.actorId]: hand.filter((item) => item.id !== card.id),
