@@ -1,4 +1,4 @@
-import { FlipHorizontal2, GalleryHorizontalEnd, Hand, HandGrab, Layers, RotateCw, Scissors, Shuffle, SquareStack, type LucideIcon } from "lucide-react";
+import { Eye, EyeOff, FlipHorizontal2, GalleryHorizontalEnd, Hand, HandGrab, Layers, RotateCw, Scissors, Shuffle, type LucideIcon } from "lucide-react";
 
 import type { Command, TablePiece } from "@/lib/domain/table";
 
@@ -13,7 +13,8 @@ export type PieceMenuItem = {
 
 export const PIECE_MENU: PieceMenuItem[] = [
   { key: "shuffle", label: "Xào", icon: Shuffle, when: (p) => p.cards.length > 1, command: (p) => ({ type: "shuffle", pieceId: p.id }) },
-  { key: "flipAll", label: "Lật cả chồng", icon: SquareStack, when: (p) => p.cards.length > 1, command: (p) => ({ type: "flipAll", pieceId: p.id }) },
+  { key: "faceDownAll", label: "Úp cả chồng", icon: EyeOff, when: (p) => p.cards.length > 1 && p.cards.some((card) => card.faceUp), command: (p) => ({ type: "faceAll", pieceId: p.id, faceUp: false }) },
+  { key: "faceUpAll", label: "Ngửa cả chồng", icon: Eye, when: (p) => p.cards.length > 1 && p.cards.some((card) => !card.faceUp), command: (p) => ({ type: "faceAll", pieceId: p.id, faceUp: true }) },
   { key: "spread", label: "Trải ra", icon: GalleryHorizontalEnd, when: (p) => p.cards.length > 1, command: (p) => ({ type: "spread", pieceId: p.id }) },
   { key: "cut", label: "Cắt đôi", icon: Scissors, when: (p) => p.cards.length > 3, command: (p) => ({ type: "split", pieceId: p.id, count: Math.floor(p.cards.length / 2), x: Math.min(0.94, p.x + 0.09), y: p.y }) },
   { key: "flipTop", label: "Lật lá trên", icon: FlipHorizontal2, gesture: "Chuột giữa", when: (p) => p.cards.length > 0, command: (p) => ({ type: "flipTop", pieceId: p.id }) },

@@ -57,7 +57,7 @@ const SECTIONS: Section[] = [
       { icon: Layers, action: "Gộp hai chồng", how: ["Thả chồng này lên chồng kia"] },
       { icon: FlipHorizontal2, action: "Lật lá trên cùng", how: ["Chuột giữa"] },
       { icon: RotateCw, action: "Xoay", how: ["Lăn chuột"] },
-      { icon: MousePointer2, action: "Xào, trải, cắt đôi, lật cả chồng", how: ["Chuột phải"] },
+      { icon: MousePointer2, action: "Xào, trải, cắt đôi, úp hoặc ngửa cả chồng", how: ["Chuột phải"] },
       { icon: BookOpenText, action: "Xem luật một lá", how: ["Nháy chuột vào lá đang ngửa"] },
       { icon: Radar, action: "Chỉ cho cả bàn xem", how: ["Nháy đúp vào chỗ trống trên bàn"] },
     ],

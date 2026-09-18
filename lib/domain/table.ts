@@ -46,7 +46,7 @@ export type Command =
   | { type: "lift"; pieceId: string }
   | { type: "rotate"; pieceId: string; degrees: number }
   | { type: "flipTop"; pieceId: string }
-  | { type: "flipAll"; pieceId: string }
+  | { type: "faceAll"; pieceId: string; faceUp: boolean }
   | { type: "shuffle"; pieceId: string }
   | { type: "spread"; pieceId: string }
   | { type: "split"; pieceId: string; count: number; x: number; y: number }
@@ -134,10 +134,6 @@ function replacePiece(pieces: TablePiece[], piece: TablePiece) {
 
 function dropPiece(pieces: TablePiece[], pieceId: string) {
   return pieces.filter((item) => item.id !== pieceId);
-}
-
-function topToBottom(cards: CardRef[]) {
-  return [...cards].reverse().map((card) => ({ ...card, faceUp: !card.faceUp }));
 }
 
 function countLabel(count: number) {
@@ -302,10 +298,11 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       return note(withPieces(state, replacePiece(state.pieces, { ...piece, cards })), ctx.actorId, flipText);
     }
 
-    case "flipAll": {
+    case "faceAll": {
       const piece = pieceOf(state, command.pieceId);
-      if (piece.cards.length < 2) return state;
-      return note(withPieces(state, replacePiece(state.pieces, { ...piece, cards: topToBottom(piece.cards) })), ctx.actorId, `lật cả ${pieceLabel(piece)}`);
+      if (piece.cards.every((card) => card.faceUp === command.faceUp)) return state;
+      const cards = piece.cards.map((card) => ({ ...card, faceUp: command.faceUp }));
+      return note(withPieces(state, replacePiece(state.pieces, { ...piece, cards })), ctx.actorId, `${command.faceUp ? "ngửa" : "úp"} cả ${pieceLabel(piece)}`);
     }
 
     case "shuffle": {
@@ -446,7 +443,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
     }
 
     default:
-      throw new RuleError("Unknown move.", 400);
+      throw new RuleError("Trang đã cũ, hãy tải lại trang.", 400);
   }
 }
 
