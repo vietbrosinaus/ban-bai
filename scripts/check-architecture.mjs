@@ -2,10 +2,9 @@ import { readFileSync } from "node:fs";
 import { globSync } from "node:fs";
 
 const LAYERS = [
-  ["composition", (p) => p === "lib/composition.ts"],
+  ["party", (p) => p.startsWith("party/")],
   ["domain", (p) => p.startsWith("lib/domain/")],
   ["ports", (p) => p.startsWith("lib/ports/")],
-  ["application", (p) => p.startsWith("lib/application/")],
   ["adapters", (p) => p.startsWith("lib/adapters/")],
   ["ui", (p) => p.startsWith("components/") || p.startsWith("app/") || p.startsWith("hooks/")],
   ["shared", (p) => p.startsWith("lib/")],
@@ -14,11 +13,10 @@ const LAYERS = [
 const MAY_IMPORT = {
   domain: ["domain"],
   ports: ["domain", "ports"],
-  application: ["domain", "ports", "application"],
   adapters: ["domain", "ports", "adapters"],
-  composition: ["domain", "ports", "application", "adapters", "composition"],
-  ui: ["domain", "application", "composition", "ui", "shared"],
-  shared: ["domain", "shared"],
+  party: ["domain", "ports", "adapters", "party"],
+  ui: ["domain", "ui", "shared"],
+  shared: ["domain", "adapters", "shared"],
 };
 
 const FORBIDDEN_IN_DOMAIN = [
@@ -35,7 +33,7 @@ function layerOf(path) {
   return null;
 }
 
-const files = globSync("{lib,app,components,hooks}/**/*.{ts,tsx}", { cwd: process.cwd() })
+const files = globSync("{lib,app,components,hooks,party}/**/*.{ts,tsx}", { cwd: process.cwd() })
   .filter((p) => !p.includes("node_modules") && !p.startsWith("components/ui/") && !p.includes("/prototype/"));
 
 const problems = [];

@@ -9,29 +9,33 @@ A lightweight online card table for 1–10 friends. Players join with a room lin
 - Create and join rooms by link or six-character code
 - Deal, shuffle, draw, play, take back, and reset actions
 - A shared, shuffled Tướng pile whose cards draw into private hands in Tam Quốc Sát rooms
-- Persistent rooms backed by Neon Postgres
+- Live rooms over websockets, one PartyKit Durable Object per table
 - Responsive desktop and mobile interface
 - WebMCP actions for reading the table, drawing, and playing cards
 
 ## Local development
 
-Requires Node.js 22+ and a Postgres connection string in `.env.local` as `DATABASE_URL`.
+Requires Node.js 22+. No database.
 
 ```bash
 npm install
-npm run db:init
-npm run dev
+cp .env.example .env.local
+npm run dev:all
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+`dev:all` runs the party server on port 1999 and Next on port 3000. Open [http://localhost:3000](http://localhost:3000).
 
 ## Deployment
 
-The app is configured for Vercel. Connect a Neon database to the Vercel project, initialize it with `npm run db:init`, and deploy with:
+Two targets. The party server holds the tables, Vercel serves the app.
 
 ```bash
+npx partykit login
+npm run deploy:party
 vercel --prod
 ```
+
+Set `NEXT_PUBLIC_PARTY_HOST` in the Vercel project to the host `deploy:party` prints, then redeploy.
 
 ## Game modes
 

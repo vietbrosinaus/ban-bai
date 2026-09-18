@@ -7,34 +7,45 @@ A shared online card table. The app is furniture, not a referee: it moves cards 
 Dependencies point inward only. `npm run arch` enforces this and fails the build if a fence breaks.
 
 ```
-lib/domain/       pure. No clock, no randomness, no network, no env, no React.
-lib/ports/        the interfaces the application depends on.
-lib/application/  use cases. Depends on domain and ports, never on an adapter.
-lib/adapters/     concrete implementations of ports.
-lib/composition.ts  the only file that knows which adapter is real.
-app/ components/ hooks/   driving adapters (HTTP routes and UI).
+lib/domain/    pure. No clock, no randomness, no network, no env, no React.
+lib/ports/     the interfaces an adapter must satisfy.
+lib/adapters/  concrete implementations of ports.
+party/         the driving adapter that owns the table: one Durable Object per room.
+app/ components/ hooks/   the driving adapter that renders it.
 ```
 
 | Layer | May import |
 | --- | --- |
 | domain | domain |
 | ports | domain, ports |
-| application | domain, ports, application |
 | adapters | domain, ports, adapters |
-| composition | everything in lib |
-| ui | domain, application, composition, ui |
+| party | domain, ports, adapters, party |
+| ui | domain, ui, shared |
 
 Domain purity is checked by pattern: `Date.now`, `Math.random`, `crypto`, `fetch`, `process.env` and node builtins are rejected inside `lib/domain`. Time, randomness and ids enter the domain through `CommandContext`, which the application layer fills from the `Clock` and `Randomness` ports.
 
 ## Ports and their adapters
 
-| Port | Adapters |
+| Port | Adapter |
 | --- | --- |
-| `RoomRepository`, `HandRepository` | `neonRoomRepository` (Postgres), `inMemoryRoomRepository` (dev and tests) |
 | `Clock` | `systemClock` |
 | `Randomness` | `webCryptoRandomness` |
 
-Without `DATABASE_URL` the composition root falls back to the in-memory repository so the app runs locally with no database. It refuses to do that in production.
+The room itself needs no repository port. A Durable Object *is* the single authoritative holder of one table, so `party/table.ts` keeps `TableState` in memory and mirrors it to the object's own storage. There is no database.
+
+## Transport
+
+One websocket per player, one Durable Object per room, and the object is the only writer.
+
+```
+browser ──ws──> party/table.ts ──> applyCommand (pure) ──> viewFor(state, seatId) ──ws──> every browser
+```
+
+Commands arrive one at a time because the object is single threaded, so there is no lock, no retry loop and no compare and swap. A command that breaks a rule is answered with `reject` plus a fresh snapshot for that player alone; nobody else sees anything.
+
+Joining and creating go over plain HTTP to the same object (`POST /parties/main/<code>`), because they hand out the seat id that the socket then connects with. The socket carries only live traffic.
+
+`lib/domain/protocol.ts` holds the message types, so the server and the client cannot drift apart.
 
 ## The table model
 
@@ -43,7 +54,7 @@ One object type. A card is a stack of one, so placing a card on a card, a card o
 - `TableState` holds seats, pieces, private hands, counters, a revision and a log.
 - `applyCommand(state, command, ctx)` is the only way state changes, and it is pure.
 - `viewFor(state, seatId)` redacts: you receive your own hand plus everyone else's hand counts.
-- Writes use compare and swap on `revision`, retried up to five times.
+- Every player gets their own redacted snapshot, so a hand never crosses the wire to someone who should not see it.
 
 Three pieces exist at the start and are tagged so they are never destroyed when emptied: `generals`, `deck`, `discard`. Everything else players build by hand.
 

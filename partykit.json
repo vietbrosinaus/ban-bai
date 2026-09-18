@@ -1,0 +1,6 @@
+{
+  "$schema": "https://www.partykit.io/schema.json",
+  "name": "ban-bai",
+  "main": "party/table.ts",
+  "compatibilityDate": "2025-09-01"
+}

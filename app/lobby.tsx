@@ -9,6 +9,8 @@ import { LanguageToggle, useLanguage } from "@/components/language-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { TableDeck } from "@/lib/domain/setup";
+import { newRoomCode } from "@/lib/room-code";
+import { tableDoor } from "@/lib/party-host";
 import { cn } from "@/lib/utils";
 
 const DECKS: Array<{ id: TableDeck; mark: string; title?: string; titleKey?: string; noteKey: string }> = [
@@ -29,12 +31,13 @@ export default function Lobby() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      const response = await fetch("/api/tables", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, deck }) });
-      const result = await response.json() as { code?: string; seatId?: string; error?: string };
-      if (!response.ok || !result.code || !result.seatId) throw new Error(result.error ?? t("createError"));
-      window.localStorage.setItem(`ban-bai:${result.code}:seat`, result.seatId);
+      const code = newRoomCode();
+      const response = await fetch(tableDoor(code), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", name, deck }) });
+      const result = await response.json() as { seatId?: string; error?: string };
+      if (!response.ok || !result.seatId) throw new Error(result.error ?? t("createError"));
+      window.localStorage.setItem(`ban-bai:${code}:seat`, result.seatId);
       window.localStorage.setItem("ban-bai:name", name.trim());
-      router.push(`/room/${result.code}`);
+      router.push(`/room/${code}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("createError"));
     } finally {
@@ -48,7 +51,7 @@ export default function Lobby() {
     if (!name.trim() || code.length < 4) return;
     setBusy(true);
     try {
-      const response = await fetch(`/api/tables/${encodeURIComponent(code)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "join", name, role: "player" }) });
+      const response = await fetch(tableDoor(code), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "join", name, role: "player" }) });
       const result = await response.json() as { seatId?: string; error?: string };
       if (!response.ok || !result.seatId) throw new Error(result.error ?? t("joinError"));
       window.localStorage.setItem(`ban-bai:${code}:seat`, result.seatId);

@@ -1,22 +1,20 @@
 "use client";
 
+import PartySocket from "partysocket";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useHydrated, useStoredValue } from "@/hooks/use-hydrated";
 
-import type { TableSnapshot } from "@/lib/application/table-service";
 import { PRESENCE, nextAnchorToSend, type Anchor } from "@/lib/domain/presence";
 import type { SeatRole } from "@/lib/domain/card";
+import type { ClientMessage, ServerMessage, TableSnapshot } from "@/lib/domain/protocol";
 import type { Command } from "@/lib/domain/table";
-
-export const TABLE_POLL_MS = 1000;
-export const TABLE_POLL_HIDDEN_MS = 4000;
+import { PARTY_NAME, partyHost, tableDoor } from "@/lib/party-host";
 
 export type TableStatus = "joining" | "live" | "reconnecting" | "offline" | "missing";
 
 const LIGHT_COMMANDS = new Set<Command["type"]>(["move", "lift", "rotate", "adjustCounter"]);
-
-type JoinReply = { seatId: string; table: TableSnapshot; error?: string };
+const ACK_TIMEOUT_MS = 8000;
 
 function seatKey(code: string) {
   return `ban-bai:${code}:seat`;
@@ -32,120 +30,108 @@ export function useTable(code: string) {
   const [pending, setPending] = useState<string | null>(null);
   const [fatal, setFatal] = useState("");
 
-  const revisionRef = useRef(0);
-  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const socketRef = useRef<PartySocket | null>(null);
+  const tableRef = useRef<TableSnapshot | null>(null);
+  const waitingRef = useRef(new Map<string, (result: TableSnapshot | null) => void>());
   const anchorRef = useRef<{ anchor: Anchor; sentAt: number } | null>(null);
-
-  const absorb = useCallback((snapshot: TableSnapshot) => {
-    revisionRef.current = snapshot.revision;
-    setTable(snapshot);
-    setStatus("live");
-  }, []);
-
-  const refresh = useCallback(async (id: string, signal?: AbortSignal) => {
-    try {
-      const url = `/api/tables/${encodeURIComponent(code)}?seatId=${encodeURIComponent(id)}&since=${revisionRef.current}`;
-      const response = await fetch(url, { cache: "no-store", signal });
-      if (response.status === 204) { setStatus("live"); return; }
-      if (response.status === 404) { setStatus("missing"); setFatal("Bàn này không tồn tại."); return; }
-      if (!response.ok) { setStatus("reconnecting"); return; }
-      absorb(await response.json() as TableSnapshot);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setStatus(navigator.onLine ? "reconnecting" : "offline");
-    }
-  }, [absorb, code]);
 
   useEffect(() => {
     if (!ready || !seatId) return;
-    let stopped = false;
-    let timer: number | undefined;
-    let controller: AbortController | null = null;
 
-    const loop = async () => {
-      if (stopped) return;
-      controller = new AbortController();
-      await refresh(seatId, controller.signal);
-      if (!stopped) timer = window.setTimeout(loop, document.hidden ? TABLE_POLL_HIDDEN_MS : TABLE_POLL_MS);
-    };
-    const wake = () => {
-      if (timer) window.clearTimeout(timer);
-      void loop();
+    const socket = new PartySocket({ host: partyHost(), party: PARTY_NAME, room: code, query: { seatId } });
+    socketRef.current = socket;
+
+    const onOpen = () => setStatus("live");
+    const onClose = () => setStatus(navigator.onLine ? "reconnecting" : "offline");
+    const onMessage = (event: MessageEvent<string>) => {
+      let message: ServerMessage;
+      try {
+        message = JSON.parse(event.data) as ServerMessage;
+      } catch {
+        return;
+      }
+
+      if (message.t === "snapshot") {
+        tableRef.current = message.snapshot;
+        setTable(message.snapshot);
+        setStatus("live");
+        return;
+      }
+      if (message.t === "hands") {
+        const merged = tableRef.current ? { ...tableRef.current, liveHands: message.hands } : null;
+        if (merged) { tableRef.current = merged; setTable(merged); }
+        return;
+      }
+      if (message.t === "gone") {
+        setStatus("missing");
+        setFatal(message.message);
+        return;
+      }
+      if (message.t === "ack" || message.t === "reject") {
+        waitingRef.current.get(message.nonce)?.(message.t === "ack" ? tableRef.current : null);
+        waitingRef.current.delete(message.nonce);
+      }
     };
 
-    void loop();
-    window.addEventListener("online", wake);
-    document.addEventListener("visibilitychange", wake);
+    socket.addEventListener("open", onOpen);
+    socket.addEventListener("close", onClose);
+    socket.addEventListener("message", onMessage);
+
     return () => {
-      stopped = true;
-      if (timer) window.clearTimeout(timer);
-      controller?.abort();
-      window.removeEventListener("online", wake);
-      document.removeEventListener("visibilitychange", wake);
+      socket.removeEventListener("open", onOpen);
+      socket.removeEventListener("close", onClose);
+      socket.removeEventListener("message", onMessage);
+      socket.close();
+      socketRef.current = null;
     };
-  }, [ready, refresh, seatId]);
+  }, [code, ready, seatId]);
 
   const join = useCallback(async (name: string, role: SeatRole = "player") => {
-    const response = await fetch(`/api/tables/${encodeURIComponent(code)}`, {
+    const response = await fetch(tableDoor(code), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "join", name, role, seatId: seatId || undefined }),
     });
-    const result = await response.json() as JoinReply;
+    const result = await response.json() as { seatId?: string; error?: string };
     if (!response.ok || !result.seatId) throw new Error(result.error ?? "Không vào được bàn.");
     window.localStorage.setItem(seatKey(code), result.seatId);
     window.localStorage.setItem("ban-bai:name", name);
     setJoinedSeat(result.seatId);
-    absorb(result.table);
     return result.seatId;
-  }, [absorb, code, seatId]);
+  }, [code, seatId]);
 
-  const send = useCallback(async (command: Command) => {
-    if (!seatId) return null;
+  const send = useCallback((command: Command) => {
+    const socket = socketRef.current;
+    if (!seatId || !socket) return Promise.resolve(null);
+
     const heavy = !LIGHT_COMMANDS.has(command.type);
+    const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (heavy) setPending(command.type);
 
-    const run = async () => {
-      if (heavy) setPending(command.type);
-      try {
-        const response = await fetch(`/api/tables/${encodeURIComponent(code)}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ seatId, command }),
-        });
-        const result = await response.json() as TableSnapshot & { error?: string };
-        if (!response.ok) throw new Error(result.error ?? "Nước đi không thành.");
-        absorb(result);
-        return result;
-      } catch {
-        setStatus(navigator.onLine ? "reconnecting" : "offline");
-        void refresh(seatId);
-        return null;
-      } finally {
+    return new Promise<TableSnapshot | null>((resolve) => {
+      const settle = (result: TableSnapshot | null) => {
+        window.clearTimeout(timer);
         if (heavy) setPending(null);
-      }
-    };
+        resolve(result);
+      };
+      const timer = window.setTimeout(() => {
+        waitingRef.current.delete(nonce);
+        settle(null);
+      }, ACK_TIMEOUT_MS);
 
-    const queued = queueRef.current.then(run, run);
-    queueRef.current = queued.catch(() => undefined);
-    return queued;
-  }, [absorb, code, refresh, seatId]);
+      waitingRef.current.set(nonce, settle);
+      socket.send(JSON.stringify({ t: "command", nonce, command } satisfies ClientMessage));
+    });
+  }, [seatId]);
 
   const setAnchor = useCallback((anchor: Anchor, grabbing = false) => {
-    if (!seatId) return;
+    const socket = socketRef.current;
+    if (!seatId || !socket || socket.readyState !== socket.OPEN) return;
     const now = performance.now();
     if (!nextAnchorToSend(anchor, anchorRef.current, now)) return;
     anchorRef.current = { anchor, sentAt: now };
-    void fetch(`/api/tables/${encodeURIComponent(code)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ seatId, action: "hand", anchor, grabbing }),
-      keepalive: true,
-    }).catch(() => undefined);
-  }, [code, seatId]);
-
-  useEffect(() => () => {
-    if (seatId) setAnchor({ kind: "home" });
-  }, [seatId, setAnchor]);
+    socket.send(JSON.stringify({ t: "hand", anchor, grabbing } satisfies ClientMessage));
+  }, [seatId]);
 
   return { ready, seatId, table, status, pending, fatal, join, send, setAnchor, settleMs: PRESENCE.settleMs };
 }
