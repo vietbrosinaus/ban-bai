@@ -1,0 +1,44 @@
+name: Deploy party server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "party/**"
+      - "lib/**"
+      - "partykit.json"
+      - "package-lock.json"
+      - ".github/workflows/deploy-party.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-party
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to PartyKit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy
+        run: npx partykit deploy
+        env:
+          PARTYKIT_LOGIN: ${{ secrets.PARTYKIT_LOGIN }}
+          PARTYKIT_TOKEN: ${{ secrets.PARTYKIT_TOKEN }}

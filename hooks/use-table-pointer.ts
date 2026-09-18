@@ -1,6 +1,6 @@
 "use client";
 
-import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useCallback, useRef, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { PRESENCE, type Anchor } from "@/lib/domain/presence";
 import { onTable, type Command, type TablePiece } from "@/lib/domain/table";
@@ -79,9 +79,9 @@ export function useTablePointer({
     },
   };
 
-  const endDrag = (event: ReactPointerEvent<HTMLDivElement>, drop: boolean) => {
+  const endDrag = (pointerId: number, clientX: number, clientY: number, drop: boolean) => {
     const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag || drag.pointerId !== pointerId) return;
     dragRef.current = null;
     setTakeCount(0);
     setAnchor({ kind: "piece", id: drag.pieceId }, false);
@@ -89,8 +89,8 @@ export function useTablePointer({
     setHoverTarget(null);
     if (!drop || !drag.moved) { setHeld(null); setLocalPositions({}); return; }
 
-    const target = hitTest(event.clientX, event.clientY, drag.pieceId);
-    const { x, y } = toFraction(event.clientX, event.clientY);
+    const target = hitTest(clientX, clientY, drag.pieceId);
+    const { x, y } = toFraction(clientX, clientY);
     const finish = () => { setHeld(null); setLocalPositions({}); };
 
     if (target?.kind === "piece") void send({ type: "merge", pieceId: drag.pieceId, ontoId: target.id }).finally(finish);
@@ -131,8 +131,8 @@ export function useTablePointer({
       const { x, y } = toFraction(event.clientX, event.clientY);
       setLocalPositions({ [drag.pieceId]: onTable(x - drag.dx, y - drag.dy) });
     },
-    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event, true),
-    onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event, false),
+    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event.pointerId, event.clientX, event.clientY, true),
+    onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event.pointerId, event.clientX, event.clientY, false),
     onDoubleClick: () => void send({ type: "takeToHand", pieceId: piece.id, count: 1 }),
     onWheel: (event: ReactWheelEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
@@ -146,22 +146,21 @@ export function useTablePointer({
     onAuxClick: (event: ReactMouseEvent<HTMLDivElement>) => event.preventDefault(),
   });
 
-  const endHandDrag = (event: ReactPointerEvent<HTMLDivElement>, drop: boolean) => {
+  const endHandDrag = (pointerId: number, clientX: number, clientY: number, drop: boolean, faceUp: boolean) => {
     const drag = handDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag || drag.pointerId !== pointerId) return;
     handDragRef.current = null;
     setCarrying(null);
     setDragCardId(null);
     setHoverTarget(null);
     if (!drop || !drag.moved) return;
 
-    const target = hitTest(event.clientX, event.clientY);
-    const faceUp = event.shiftKey;
+    const target = hitTest(clientX, clientY);
     if (target?.kind === "slot") void send({ type: "playToSlot", cardId: drag.cardId, seatId: target.seatId, slot: target.slot, faceUp });
     else if (target?.kind === "piece") void send({ type: "playOntoPiece", cardId: drag.cardId, pieceId: target.id, faceUp });
     else if (target?.kind === "seat") void send({ type: "giveToSeat", cardId: drag.cardId, seatId: target.id });
     else if (target?.kind === "felt") {
-      const { x, y } = toFraction(event.clientX, event.clientY);
+      const { x, y } = toFraction(clientX, clientY);
       void send({ type: "playToTable", cardId: drag.cardId, x, y, faceUp });
     }
   };
@@ -185,18 +184,18 @@ export function useTablePointer({
       setHoverTarget(hitTest(event.clientX, event.clientY));
       setCarrying({ cardId: drag.cardId, x: event.clientX, y: event.clientY });
     },
-    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endHandDrag(event, true),
-    onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endHandDrag(event, false),
+    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endHandDrag(event.pointerId, event.clientX, event.clientY, true, event.shiftKey),
+    onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endHandDrag(event.pointerId, event.clientX, event.clientY, false, false),
   });
 
-  const endCounterDrag = (event: ReactPointerEvent<HTMLDivElement>, drop: boolean) => {
+  const endCounterDrag = (pointerId: number, clientX: number, clientY: number, drop: boolean) => {
     const drag = counterDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag || drag.pointerId !== pointerId) return;
     counterDragRef.current = null;
     if (!drop || !drag.moved) { setHeld(null); setLocalPositions({}); return; }
 
-    const target = hitTest(event.clientX, event.clientY);
-    const { x, y } = toFraction(event.clientX, event.clientY);
+    const target = hitTest(clientX, clientY);
+    const { x, y } = toFraction(clientX, clientY);
     const finish = () => { setHeld(null); setLocalPositions({}); };
 
     if (target?.kind === "slot" || target?.kind === "seat") {
@@ -231,9 +230,41 @@ export function useTablePointer({
       const { x, y } = toFraction(event.clientX, event.clientY);
       setLocalPositions({ [drag.counterId]: onTable(x - drag.dx, y - drag.dy) });
     },
-    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event, true),
-    onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event, false),
+    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event.pointerId, event.clientX, event.clientY, true),
+    onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event.pointerId, event.clientX, event.clientY, false),
   });
+
+  const endersRef = useRef({ endDrag, endHandDrag, endCounterDrag });
+  useEffect(() => { endersRef.current = { endDrag, endHandDrag, endCounterDrag }; });
+
+  useEffect(() => {
+    const settle = (event: PointerEvent, drop: boolean) => {
+      const { endDrag: piece, endHandDrag: hand, endCounterDrag: counter } = endersRef.current;
+      piece(event.pointerId, event.clientX, event.clientY, drop);
+      hand(event.pointerId, event.clientX, event.clientY, drop, event.shiftKey);
+      counter(event.pointerId, event.clientX, event.clientY, drop);
+    };
+    const onUp = (event: PointerEvent) => settle(event, true);
+    const onCancel = (event: PointerEvent) => settle(event, false);
+    const onLeave = () => {
+      const { endDrag: piece, endHandDrag: hand, endCounterDrag: counter } = endersRef.current;
+      for (const id of [dragRef.current?.pointerId, handDragRef.current?.pointerId, counterDragRef.current?.pointerId]) {
+        if (id === undefined) continue;
+        piece(id, 0, 0, false);
+        hand(id, 0, 0, false, false);
+        counter(id, 0, 0, false);
+      }
+    };
+
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("blur", onLeave);
+    return () => {
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("blur", onLeave);
+    };
+  }, []);
 
   return { feltProps, feltRef, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget };
 }

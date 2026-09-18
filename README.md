@@ -27,15 +27,24 @@ npm run dev:all
 
 ## Deployment
 
-Two targets. The party server holds the tables, Vercel serves the app.
+Two targets. The party server holds the tables, Vercel serves the app. Both deploy from `main`, so nobody needs credentials on their own machine.
+
+The repository owner does this once:
 
 ```bash
 npx partykit login
-npm run deploy:party
-vercel --prod
+npx partykit token generate
 ```
 
-Set `NEXT_PUBLIC_PARTY_HOST` in the Vercel project to the host `deploy:party` prints, then redeploy.
+`token generate` prints a `PARTYKIT_LOGIN` and a `PARTYKIT_TOKEN`, and the token is shown only once. Add both as GitHub Actions secrets. From then on `.github/workflows/deploy-party.yml` deploys the party server on every push to `main` that touches `party/`, `lib/` or `partykit.json`.
+
+The app itself needs one environment variable in Vercel:
+
+| Key | Value |
+| --- | --- |
+| `NEXT_PUBLIC_PARTY_HOST` | the host the first deploy prints, `ban-bai.<owner>.partykit.dev` |
+
+It is read at build time, not run time, so Vercel has to rebuild after it is set.
 
 ## Game modes
 
