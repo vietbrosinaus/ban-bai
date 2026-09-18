@@ -68,12 +68,6 @@ export type Command =
   | { type: "proposeClear" }
   | { type: "agreeClear" }
   | { type: "cancelClear" }
-  | { type: "selectionMove"; ids: string[]; dx: number; dy: number }
-  | { type: "selectionStack"; ids: string[] }
-  | { type: "selectionFlip"; ids: string[] }
-  | { type: "selectionToHand"; ids: string[] }
-  | { type: "selectionToPile"; ids: string[]; pileId: string }
-  | { type: "selectionSpread"; ids: string[] }
   | { type: "gather" }
   | { type: "compactRing" }
   | { type: "reset" };
@@ -91,7 +85,16 @@ export class RuleError extends Error {
   }
 }
 
-const clamp = (value: number) => Math.min(0.97, Math.max(0.03, value));
+const TABLE_RX = 0.45;
+const TABLE_RY = 0.4;
+
+export function onTable(x: number, y: number): Point {
+  const dx = (x - 0.5) / TABLE_RX;
+  const dy = (y - 0.5) / TABLE_RY;
+  const reach = Math.hypot(dx, dy);
+  if (reach <= 1) return { x, y };
+  return { x: 0.5 + (dx / reach) * TABLE_RX, y: 0.5 + (dy / reach) * TABLE_RY };
+}
 
 function seatOf(state: TableState, seatId: string) {
   const seat = state.seats.find((item) => item.id === seatId);
@@ -111,11 +114,6 @@ function pieceOf(state: TableState, pieceId: string) {
   const piece = state.pieces.find((item) => item.id === pieceId);
   if (!piece) throw new RuleError("That is not on the table any more.", 409);
   return piece;
-}
-
-function selectionOf(state: TableState, ids: string[]) {
-  const chosen = new Set(ids);
-  return state.pieces.filter((piece) => chosen.has(piece.id) && !piece.slot && !piece.tag && piece.cards.length);
 }
 
 function requireHost(state: TableState, actorId: string) {
@@ -193,7 +191,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
 
     case "move": {
       const piece = pieceOf(state, command.pieceId);
-      const freed = { ...piece, x: clamp(command.x), y: clamp(command.y), ownerId: undefined, slot: undefined };
+      const freed = { ...piece, ...onTable(command.x, command.y), ownerId: undefined, slot: undefined };
       return withPieces(state, replacePiece(state.pieces, freed));
     }
 
@@ -230,7 +228,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
 
     case "releaseSlot": {
       const piece = pieceOf(state, command.pieceId);
-      const freed = { ...piece, ownerId: undefined, slot: undefined, x: clamp(command.x), y: clamp(command.y) };
+      const freed = { ...piece, ownerId: undefined, slot: undefined, ...onTable(command.x, command.y) };
       return withPieces(state, replacePiece(state.pieces, freed));
     }
 
@@ -239,7 +237,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
         ...state,
         counters: state.counters.map((counter) =>
           counter.id === command.counterId
-            ? { ...counter, x: clamp(command.x), y: clamp(command.y), ownerId: undefined, slotted: false }
+            ? { ...counter, ...onTable(command.x, command.y), ownerId: undefined, slotted: false }
             : counter,
         ),
       };
@@ -323,8 +321,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       const rest = piece.cards.slice(0, piece.cards.length - taken.length);
       const spread = taken.map((card, index) => ({
         id: ctx.id(),
-        x: clamp(piece.x + (index + 1) * 0.055),
-        y: piece.y,
+        ...onTable(piece.x + (index + 1) * 0.055, piece.y),
         rotation: piece.rotation,
         cards: [card],
       }));
@@ -338,7 +335,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       if (count >= piece.cards.length && !piece.tag) return route(state, { type: "move", pieceId: piece.id, x: command.x, y: command.y }, ctx);
       const taken = piece.cards.slice(-count);
       const rest = piece.cards.slice(0, piece.cards.length - count);
-      const born: TablePiece = { id: ctx.id(), x: clamp(command.x), y: clamp(command.y), rotation: piece.rotation, playedBy: ctx.actorId, cards: taken };
+      const born: TablePiece = { id: ctx.id(), ...onTable(command.x, command.y), rotation: piece.rotation, playedBy: ctx.actorId, cards: taken };
       return note(withPieces(state, [...replacePiece(state.pieces, { ...piece, cards: rest }), born]), ctx.actorId, `lấy ${countLabel(count)} từ ${pieceLabel(piece)}`);
     }
 
@@ -368,7 +365,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       const hand = state.hands[ctx.actorId] ?? [];
       const card = hand.find((item) => item.id === command.cardId);
       if (!card) throw new RuleError("That card is not in your hand.", 409);
-      const born: TablePiece = { id: ctx.id(), x: clamp(command.x), y: clamp(command.y), rotation: 0, playedBy: ctx.actorId, cards: [{ id: card.id, faceUp: command.faceUp }] };
+      const born: TablePiece = { id: ctx.id(), ...onTable(command.x, command.y), rotation: 0, playedBy: ctx.actorId, cards: [{ id: card.id, faceUp: command.faceUp }] };
       const hands = { ...state.hands, [ctx.actorId]: hand.filter((item) => item.id !== card.id) };
       return note({ ...withPieces(state, [...state.pieces, born]), hands }, ctx.actorId, command.faceUp ? "đánh một lá ngửa" : "đánh một lá úp");
     }
@@ -397,7 +394,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
     }
 
     case "addCounter": {
-      const counter: Counter = { id: ctx.id(), label: command.label.slice(0, 12), value: command.value, x: clamp(command.x), y: clamp(command.y), ownerId: command.ownerId };
+      const counter: Counter = { id: ctx.id(), label: command.label.slice(0, 12), value: command.value, ...onTable(command.x, command.y), ownerId: command.ownerId };
       return { ...state, counters: [...state.counters, counter] };
     }
 
@@ -424,80 +421,6 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       }
       const pieces = replacePiece(state.pieces, { ...deck, cards });
       return note({ ...withPieces(state, pieces), hands }, ctx.actorId, `chia mỗi người ${countLabel(count)}`);
-    }
-
-    case "selectionMove": {
-      const chosen = new Set(command.ids);
-      return withPieces(state, state.pieces.map((piece) =>
-        chosen.has(piece.id) && !piece.slot && !piece.tag
-          ? { ...piece, x: clamp(piece.x + command.dx), y: clamp(piece.y + command.dy) }
-          : piece,
-      ));
-    }
-
-    case "selectionStack": {
-      const chosen = selectionOf(state, command.ids);
-      if (chosen.length < 2) return state;
-      const [first, ...rest] = chosen;
-      const merged: TablePiece = { ...first, cards: chosen.flatMap((piece) => piece.cards) };
-      const dropped = new Set(rest.map((piece) => piece.id));
-      const pieces = state.pieces.filter((piece) => !dropped.has(piece.id)).map((piece) => (piece.id === merged.id ? merged : piece));
-      return note(withPieces(state, pieces), ctx.actorId, `gom ${countLabel(merged.cards.length)} thành một chồng`);
-    }
-
-    case "selectionFlip": {
-      const chosen = new Set(selectionOf(state, command.ids).map((piece) => piece.id));
-      const pieces = state.pieces.map((piece) =>
-        chosen.has(piece.id) ? { ...piece, cards: topToBottom(piece.cards) } : piece,
-      );
-      return note(withPieces(state, pieces), ctx.actorId, `lật ${command.ids.length} lá`);
-    }
-
-    case "selectionToHand": {
-      requirePlayer(state, ctx.actorId);
-      const chosen = selectionOf(state, command.ids);
-      if (!chosen.length) return state;
-      const taken = chosen.flatMap((piece) => piece.cards).map((card) => ({ ...card, faceUp: true }));
-      const dropped = new Set(chosen.filter((piece) => !piece.tag).map((piece) => piece.id));
-      const pieces = state.pieces
-        .filter((piece) => !dropped.has(piece.id))
-        .map((piece) => (chosen.some((item) => item.id === piece.id) ? { ...piece, cards: [] } : piece));
-      const hands = { ...state.hands, [ctx.actorId]: [...(state.hands[ctx.actorId] ?? []), ...taken] };
-      return note({ ...withPieces(state, pieces), hands }, ctx.actorId, `cầm ${countLabel(taken.length)} lên tay`);
-    }
-
-    case "selectionToPile": {
-      const target = pieceOf(state, command.pileId);
-      const chosen = selectionOf(state, command.ids).filter((piece) => piece.id !== target.id);
-      if (!chosen.length) return state;
-      const moved = chosen.flatMap((piece) => piece.cards).map((card) => ({ ...card, faceUp: target.tag === "discard" }));
-      const dropped = new Set(chosen.filter((piece) => !piece.tag).map((piece) => piece.id));
-      const pieces = state.pieces
-        .filter((piece) => !dropped.has(piece.id))
-        .map((piece) => {
-          if (piece.id === target.id) return { ...piece, cards: [...piece.cards, ...moved] };
-          return chosen.some((item) => item.id === piece.id) ? { ...piece, cards: [] } : piece;
-        });
-      return note(withPieces(state, pieces), ctx.actorId, `chuyển ${countLabel(moved.length)} vào ${pieceLabel(target)}`);
-    }
-
-    case "selectionSpread": {
-      const chosen = selectionOf(state, command.ids);
-      if (!chosen.length) return state;
-      const row = chosen.flatMap((piece) => piece.cards);
-      const origin = chosen[0];
-      const dropped = new Set(chosen.filter((piece) => !piece.tag).map((piece) => piece.id));
-      const spread: TablePiece[] = row.map((card, index) => ({
-        id: ctx.id(),
-        x: clamp(origin.x + (index - (row.length - 1) / 2) * 0.05),
-        y: clamp(origin.y),
-        rotation: 0,
-        cards: [card],
-      }));
-      const kept = state.pieces
-        .filter((piece) => !dropped.has(piece.id))
-        .map((piece) => (chosen.some((item) => item.id === piece.id) ? { ...piece, cards: [] } : piece));
-      return note(withPieces(state, [...kept, ...spread]), ctx.actorId, `trải ${countLabel(row.length)} ra bàn`);
     }
 
     case "gather": {

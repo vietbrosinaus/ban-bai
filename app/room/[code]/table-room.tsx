@@ -33,13 +33,12 @@ import { pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/ta
 import { PIECE_MENU } from "./piece-menu";
 import { HandUtilities } from "./table-controls";
 import { ClearVoteBanner, TableMenu } from "./table-menu";
-import { SelectionMenu } from "./selection-bar";
 
 export default function TableRoom() {
   const params = useParams<{ code: string }>();
   const code = String(params.code ?? "").toUpperCase();
   const { ready, seatId, table, status, pending, fatal, join, send, setAnchor } = useTable(code);
-  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget, marquee, selection, clearSelection } = useTablePointer({ send, setAnchor });
+  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({ send, setAnchor });
 
   const storedName = useStoredValue("ban-bai:name");
   const [typedName, setTypedName] = useState<string | null>(null);
@@ -220,7 +219,6 @@ export default function TableRoom() {
                 x={at.x}
                 y={at.y}
                 held={held === piece.id}
-                selected={selection.includes(piece.id)}
                 shrink={held === piece.id && hoverTarget?.kind === "slot"}
                 playedBy={table?.seats.find((seat) => seat.id === piece.playedBy)}
                 pieceProps={pieceProps}
@@ -254,26 +252,6 @@ export default function TableRoom() {
               style={{ opacity: hand.opacity }}
             />
           ))}
-          {marquee ? (
-            <div
-              className="pointer-events-none absolute z-40 rounded-sm border border-gilt/70 bg-gilt/10"
-              style={{
-                left: `${Math.min(marquee.from.x, marquee.to.x) * 100}%`,
-                top: `${Math.min(marquee.from.y, marquee.to.y) * 100}%`,
-                width: `${Math.abs(marquee.to.x - marquee.from.x) * 100}%`,
-                height: `${Math.abs(marquee.to.y - marquee.from.y) * 100}%`,
-              }}
-            />
-          ) : null}
-
-          <SelectionMenu
-            selection={selection}
-            discardId={table?.pieces.find((piece) => piece.tag === "discard")?.id}
-            watching={Boolean(watching)}
-            onClear={clearSelection}
-            send={send}
-          />
-
           {table?.clearVote && table.clearVote.expiresAt > now ? (
             <ClearVoteBanner vote={table.clearVote} players={players.length} seatId={seatId} seats={table.seats} send={send} />
           ) : null}
@@ -378,7 +356,7 @@ function HandCard({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div {...handCardProps(cardId)} onClick={() => setInfo(true)}>
+          <div {...handCardProps(cardId, () => setInfo(true))}>
             <PlayingCard cardId={cardId} size="md" className="transition-transform hover:-translate-y-1" />
           </div>
         </ContextMenuTrigger>
@@ -496,14 +474,13 @@ function SeatCounter({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            {...counterProps(counter)}
+            {...counterProps(counter, () => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 }))}
             onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
           >
             <CounterChip
               label={counter.label}
               value={counter.value}
               className={cn("shadow-none", self ? "size-11" : "size-8")}
-              onClick={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}
             />
           </div>
         </ContextMenuTrigger>
@@ -537,14 +514,10 @@ function CounterOnTable({
           <TablePiece
             x={counter.x}
             y={counter.y}
-            {...counterProps(counter)}
+            {...counterProps(counter, () => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 }))}
             onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
           >
-            <CounterChip
-              label={counter.label}
-              value={counter.value}
-              onClick={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}
-            />
+            <CounterChip label={counter.label} value={counter.value} />
           </TablePiece>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
@@ -620,9 +593,8 @@ function SlotCard({
     <CardShell piece={piece} send={send}>
       {(open) => (
         <div
-          {...pieceProps(piece)}
+          {...pieceProps(piece, open)}
           data-slotted=""
-          onClick={open}
           className="relative z-0 grid h-full w-full place-items-center p-0.5 transition-transform duration-150 hover:z-30 hover:scale-[2.4]"
         >
           <PlayingCard cardId={top.id} faceDown={!top.faceUp} size="xs" className="h-full w-auto" />
@@ -642,7 +614,6 @@ function PieceOnTable({
   x,
   y,
   held,
-  selected = false,
   shrink = false,
   playedBy,
   pieceProps,
@@ -652,7 +623,6 @@ function PieceOnTable({
   x: number;
   y: number;
   held: boolean;
-  selected?: boolean;
   shrink?: boolean;
   playedBy?: { name: string; colour: string };
   pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
@@ -667,10 +637,7 @@ function PieceOnTable({
           y={y}
           rotation={piece.rotation}
           held={held}
-          selected={selected}
-          {...pieceProps(piece)}
-          data-fixed={piece.tag ? "" : undefined}
-          onClick={open}
+          {...pieceProps(piece, open)}
           className="group"
         >
           <CardStack

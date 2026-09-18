@@ -8,7 +8,7 @@ import { FACTION_LABEL, type CardId, type Faction, type Suit } from "@/lib/domai
 import { cn } from "@/lib/utils";
 
 const playingCardVariants = cva(
-  "relative aspect-[5/7] shrink-0 select-none overflow-hidden rounded-[7%] bg-card-face bg-cover bg-center shadow-[0_0.4rem_0.8rem_rgba(0,0,0,0.32)] ring-1 ring-card-edge [container-type:inline-size]",
+  "relative aspect-[5/7] shrink-0 select-none overflow-hidden rounded-[7%] bg-card-face bg-cover bg-center text-foreground shadow-[0_0.4rem_0.8rem_rgba(0,0,0,0.32)] ring-1 ring-card-edge [container-type:inline-size]",
   {
     variants: {
       size: {
@@ -50,7 +50,7 @@ function CardCorner({ rank, suit, className }: { rank: string; suit: Suit; class
         className,
       )}
     >
-      <b className="font-bold text-[#17241f]">{rank}</b>
+      <b className="font-bold">{rank}</b>
       <SuitMark suit={suit} className="text-[0.92em]" />
     </span>
   );
