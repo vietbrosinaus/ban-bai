@@ -16,6 +16,7 @@ export type TableStatus = "joining" | "live" | "reconnecting" | "offline" | "mis
 const LIGHT_COMMANDS = new Set<Command["type"]>(["move", "lift", "rotate", "adjustCounter"]);
 const ACK_TIMEOUT_MS = 8000;
 const CONNECT_GRACE_MS = 6000;
+const HOST = partyHost();
 
 function seatKey(code: string) {
   return `ban-bai:${code}:seat`;
@@ -27,9 +28,9 @@ export function useTable(code: string) {
   const [joinedSeat, setJoinedSeat] = useState("");
   const seatId = joinedSeat || storedSeat;
   const [table, setTable] = useState<TableSnapshot | null>(null);
-  const [status, setStatus] = useState<TableStatus>("joining");
+  const [status, setStatus] = useState<TableStatus>(HOST ? "joining" : "missing");
   const [pending, setPending] = useState<string | null>(null);
-  const [fatal, setFatal] = useState(partyHost() ? "" : MISSING_HOST);
+  const [fatal, setFatal] = useState(HOST ? "" : MISSING_HOST);
 
   const socketRef = useRef<PartySocket | null>(null);
   const tableRef = useRef<TableSnapshot | null>(null);
@@ -37,13 +38,11 @@ export function useTable(code: string) {
   const anchorRef = useRef<{ anchor: Anchor; sentAt: number } | null>(null);
 
   useEffect(() => {
-    const host = partyHost();
-    if (!host) { setStatus("missing"); setFatal(MISSING_HOST); return; }
-    if (!ready || !seatId) return;
+    if (!HOST || !ready || !seatId) return;
 
-    const socket = new PartySocket({ host, party: PARTY_NAME, room: code, query: { seatId } });
+    const socket = new PartySocket({ host: HOST, party: PARTY_NAME, room: code, query: { seatId } });
     const stall = window.setTimeout(() => {
-      if (socket.readyState !== socket.OPEN) setFatal(`Không kết nối được tới máy chủ bàn (${host}).`);
+      if (socket.readyState !== socket.OPEN) setFatal(`Không kết nối được tới máy chủ bàn (${HOST}).`);
     }, CONNECT_GRACE_MS);
     socketRef.current = socket;
 
