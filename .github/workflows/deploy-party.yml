@@ -37,17 +37,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check the deploy credentials exist
+      - name: Look for deploy credentials
+        id: creds
         run: |
-          if [ -z "$PARTYKIT_LOGIN" ] || [ -z "$PARTYKIT_TOKEN" ]; then
-            echo "::error::PARTYKIT_LOGIN and PARTYKIT_TOKEN are not set. The repository owner creates them with 'npx partykit token generate' and adds them under Settings, Secrets and variables, Actions."
-            exit 1
+          if [ -n "$PARTYKIT_LOGIN" ] && [ -n "$PARTYKIT_TOKEN" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Party server not deployed. PARTYKIT_LOGIN and PARTYKIT_TOKEN are not set, so this step was skipped. The repository owner creates them with 'npx partykit token generate' and adds them under Settings, Secrets and variables, Actions."
           fi
         env:
           PARTYKIT_LOGIN: ${{ secrets.PARTYKIT_LOGIN }}
           PARTYKIT_TOKEN: ${{ secrets.PARTYKIT_TOKEN }}
 
       - name: Deploy
+        if: steps.creds.outputs.ready == 'true'
         run: npx partykit deploy
         timeout-minutes: 5
         env:
