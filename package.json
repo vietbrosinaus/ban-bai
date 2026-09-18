@@ -9,10 +9,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ignore-pattern .next",
+    "lint": "eslint . --ignore-pattern .next --ignore-pattern .vercel",
     "db:init": "node --env-file=.env.local scripts/init-db.mjs",
     "arch": "node scripts/check-architecture.mjs",
-    "check": "npm run arch && tsc --noEmit && next lint"
+    "check": "npm run arch && tsc --noEmit && npm run lint"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
