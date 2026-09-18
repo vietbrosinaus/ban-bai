@@ -80,14 +80,13 @@ export function useTablePointer({
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
-    setHeld(null);
     setTakeCount(0);
     setAnchor({ kind: "piece", id: drag.pieceId }, false);
-    if (!drop || !drag.moved) { setLocalPositions({}); return; }
+    if (!drop || !drag.moved) { setHeld(null); setLocalPositions({}); return; }
 
     const target = hitTest(event.clientX, event.clientY, drag.pieceId);
     const { x, y } = toFraction(event.clientX, event.clientY);
-    const finish = () => setLocalPositions({});
+    const finish = () => { setHeld(null); setLocalPositions({}); };
 
     if (target?.kind === "piece") void send({ type: "merge", pieceId: drag.pieceId, ontoId: target.id }).finally(finish);
     else if (target?.kind === "slot") void send({ type: "placeInSlot", pieceId: drag.pieceId, seatId: target.seatId, slot: target.slot }).finally(finish);
@@ -176,12 +175,11 @@ export function useTablePointer({
     const drag = counterDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     counterDragRef.current = null;
-    setHeld(null);
-    if (!drop || !drag.moved) { setLocalPositions({}); return; }
+    if (!drop || !drag.moved) { setHeld(null); setLocalPositions({}); return; }
 
     const target = hitTest(event.clientX, event.clientY);
     const { x, y } = toFraction(event.clientX, event.clientY);
-    const finish = () => setLocalPositions({});
+    const finish = () => { setHeld(null); setLocalPositions({}); };
 
     if (target?.kind === "slot" || target?.kind === "seat") {
       const seatId = target.kind === "slot" ? target.seatId : target.id;

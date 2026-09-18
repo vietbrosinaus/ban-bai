@@ -25,6 +25,7 @@ const ROWS: SeatSlot[][] = [
 function SeatBoard({
   seatId,
   self = false,
+  armed = false,
   filled,
   counters,
   className,
@@ -32,6 +33,7 @@ function SeatBoard({
 }: React.ComponentProps<"div"> & {
   seatId: string;
   self?: boolean;
+  armed?: boolean;
   filled: (slot: SeatSlot) => React.ReactNode;
   counters?: React.ReactNode;
 }) {
@@ -54,8 +56,9 @@ function SeatBoard({
                 className={cn(
                   "grid place-items-center rounded-[0.3rem] border border-dashed border-white/20 bg-black/20 transition-colors",
                   "hover:border-gilt/70 hover:bg-gilt/10",
-                  slot === "judgement" ? "h-11 w-[3.6rem]" : "h-11 w-8",
-                  self && (slot === "judgement" ? "h-[3.85rem] w-[5rem]" : "h-[3.85rem] w-11"),
+                  armed && "border-gilt/45",
+                  slot === "judgement" ? "h-9 w-[3rem]" : "h-9 w-[1.6rem]",
+                  self && (slot === "judgement" ? "h-12 w-[4rem]" : "h-12 w-[2.15rem]"),
                   content && "border-solid border-white/30 bg-transparent",
                 )}
               >
@@ -70,7 +73,7 @@ function SeatBoard({
               title="Ô đếm"
               className={cn(
                 "flex aspect-square items-center justify-center gap-1 rounded-full border border-dashed border-white/20 bg-black/20 transition-colors hover:border-gilt/70 hover:bg-gilt/10",
-                self ? "size-[3.85rem]" : "size-11",
+                self ? "size-12" : "size-9",
               )}
             >
               {counters ?? <CircleDot className="size-3.5 text-white/30" />}

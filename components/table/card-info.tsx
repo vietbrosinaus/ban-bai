@@ -33,6 +33,7 @@ function CardInfoHeader({ cardId }: { cardId: CardId }) {
     <div className="flex flex-wrap items-center gap-2">
       {rules?.kind === "general" ? (
         <>
+          <Badge variant="secondary">Tướng</Badge>
           <Badge className={cn("border-0 text-white", FACTION_FILL[rules.faction])}>{FACTION_LABEL[rules.faction]}</Badge>
           <Badge variant="outline" className="gap-1">
             <Heart className="fill-current" />

@@ -80,7 +80,6 @@ function PlayingCard({
         className
       )}
       style={!faceDown && card?.art ? { backgroundImage: `url("${card.art}")` } : undefined}
-      title={faceDown ? undefined : card?.name}
       {...props}
     >
       {faceDown && (

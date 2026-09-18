@@ -1,5 +1,5 @@
 import type { CardId, CardRef, Counter, Piece, Point, Seat, SeatRole, SeatSlot } from "./card";
-import { cardFace } from "./deck";
+import { cardFace, cardRules } from "./deck";
 import { starterPieces, type TableDeck } from "./setup";
 
 export type PieceTag = "generals" | "deck" | "discard" | "seat";
@@ -441,12 +441,24 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
 
 export const MAX_PLAYERS = 10;
 
-const GENERAL_SLOTS = new Set<SeatSlot>(["general1", "general2"]);
+const SLOT_ACCEPTS: Partial<Record<SeatSlot, { test: (id: string) => boolean; refusal: string }>> = {
+  general1: { test: (id) => cardFace(id)?.kind === "general", refusal: "Ô tướng chỉ nhận lá tướng." },
+  general2: { test: (id) => cardFace(id)?.kind === "general", refusal: "Ô tướng chỉ nhận lá tướng." },
+  weapon: { test: (id) => categoryOf(id) === "weapon", refusal: "Ô này chỉ nhận vũ khí." },
+  armor: { test: (id) => categoryOf(id) === "armor", refusal: "Ô này chỉ nhận phòng cụ." },
+  horsePlus: { test: (id) => categoryOf(id) === "mount", refusal: "Ô này chỉ nhận ngựa." },
+  horseMinus: { test: (id) => categoryOf(id) === "mount", refusal: "Ô này chỉ nhận ngựa." },
+};
+
+function categoryOf(id: string) {
+  const rules = cardRules(id);
+  return rules?.kind === "play" ? rules.category : undefined;
+}
 
 function guardSlot(slot: SeatSlot, cards: CardRef[]) {
-  if (!GENERAL_SLOTS.has(slot)) return;
-  const wrong = cards.find((card) => cardFace(card.id)?.kind !== "general");
-  if (wrong) throw new RuleError("Ô tướng chỉ nhận lá tướng.", 409);
+  const rule = SLOT_ACCEPTS[slot];
+  if (!rule) return;
+  if (cards.some((card) => !rule.test(card.id))) throw new RuleError(rule.refusal, 409);
 }
 
 const SEAT_SLOT_TEXT: Record<SeatSlot, string> = {

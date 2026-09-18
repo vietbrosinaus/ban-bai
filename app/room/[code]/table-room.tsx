@@ -156,18 +156,31 @@ export default function TableRoom() {
                 )}
                 style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
               >
-                <SeatBadge
-                  data-seat={seat.id}
-                  name={seat.name}
-                  colour={seat.colour}
-                  handCount={table?.handCounts[seat.id] ?? 0}
-                  seatNumber={seat.index + 1}
-                  self={seat.id === seatId}
-                  className="transition-shadow hover:shadow-[0_0_0_2px_var(--gilt)]"
-                />
+                <div className="relative">
+                  <SeatBadge
+                    data-seat={seat.id}
+                    name={seat.name}
+                    colour={seat.colour}
+                    handCount={table?.handCounts[seat.id] ?? 0}
+                    seatNumber={seat.index + 1}
+                    self={seat.id === seatId}
+                    className={cn(
+                      "transition-shadow",
+                      carrying
+                        ? "shadow-[0_0_0_2px_var(--gilt)] hover:shadow-[0_0_0_3px_var(--gilt),0_0_1.2rem_rgba(244,201,93,0.55)]"
+                        : "hover:shadow-[0_0_0_2px_var(--gilt)]",
+                    )}
+                  />
+                  {carrying ? (
+                    <Badge className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 bg-gilt text-[0.5rem] whitespace-nowrap text-[#17241f]">
+                      đưa vào tay
+                    </Badge>
+                  ) : null}
+                </div>
                 <SeatBoard
                   seatId={seat.id}
                   self={seat.id === seatId}
+                  armed={Boolean(carrying)}
                   counters={
                     (table?.counters ?? []).filter((counter) => counter.slotted && counter.ownerId === seat.id).length ? (
                       <div className="flex gap-1">
@@ -258,7 +271,7 @@ export default function TableRoom() {
           <MetaList className="text-[0.68rem] text-gilt-dim">
             {watching ? <span>Bạn đang xem</span> : <span>Bài trên tay</span>}
             {watching ? <span className="text-white/40">ghế xem không cầm bài</span> : <span className="tabular-nums">{table?.hand.length ?? 0}</span>}
-            {watching ? null : <span className="text-white/40">kéo lên bàn để đánh, giữ Shift để úp</span>}
+            {watching ? null : <span className="text-white/40">kéo lên bàn để đánh úp, giữ Shift để ngửa</span>}
           </MetaList>
           <HandUtilities watching={Boolean(watching)} send={send} seatPoint={seatPoints.get(seatId) ?? { x: 0.5, y: 0.85 }} />
         </div>
@@ -449,7 +462,7 @@ function SeatCounter({
             <CounterChip
               label={counter.label}
               value={counter.value}
-              className={cn("shadow-none", self ? "size-13" : "size-9")}
+              className={cn("shadow-none", self ? "size-11" : "size-8")}
               onClick={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}
             />
           </div>
