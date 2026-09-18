@@ -1,5 +1,5 @@
 import type { CardId, CardRef, Counter, Piece, Point, Seat, SeatRole, SeatSlot } from "./card";
-import { cardFace, cardRules } from "./deck";
+import { ROLE_LABEL, cardRules, type CardRole } from "./deck";
 import { starterPieces, type TableDeck } from "./setup";
 
 export type PieceTag = "generals" | "deck" | "discard" | "seat";
@@ -138,7 +138,7 @@ function countLabel(count: number) {
 export function pieceLabel(piece: TablePiece) {
   if (piece.label) return piece.label;
   if (piece.cards.length > 1) return `chồng ${countLabel(piece.cards.length)}`;
-  return "một lá";
+  return "lá bài";
 }
 
 export function applyCommand(state: TableState, command: Command, ctx: CommandContext): TableState {
@@ -200,7 +200,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
         return note(withPieces(state, replacePiece(dropPiece(state.pieces, piece.id), merged)), ctx.actorId, `đặt bài vào ${SEAT_SLOT_TEXT.judgement} của ${seat.name}`);
       }
       const placed = { ...piece, ownerId: seat.id, slot: command.slot, rotation: 0 };
-      return note(withPieces(state, replacePiece(state.pieces, placed)), ctx.actorId, `đặt bài vào ${SEAT_SLOT_TEXT[command.slot]} của ${seat.name}`);
+      return note(withPieces(state, replacePiece(state.pieces, placed)), ctx.actorId, slotText(ctx.actorId, seat, command.slot));
     }
 
     case "playToSlot": {
@@ -214,7 +214,7 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       const pieces = occupant
         ? replacePiece(state.pieces, { ...occupant, cards: [...occupant.cards, { id: card.id, faceUp: command.faceUp }] })
         : [...state.pieces, { id: ctx.id(), x: 0.5, y: 0.5, rotation: 0, ownerId: seat.id, slot: command.slot, playedBy: ctx.actorId, cards: [{ id: card.id, faceUp: command.faceUp }] }];
-      return note({ ...withPieces(state, pieces), hands }, ctx.actorId, `đặt bài vào ${SEAT_SLOT_TEXT[command.slot]} của ${seat.name}`);
+      return note({ ...withPieces(state, pieces), hands }, ctx.actorId, slotText(ctx.actorId, seat, command.slot));
     }
 
     case "releaseSlot": {
@@ -289,7 +289,8 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       if (!piece.cards.length) return state;
       const top = piece.cards.length - 1;
       const cards = piece.cards.map((card, index) => (index === top ? { ...card, faceUp: !card.faceUp } : card));
-      return note(withPieces(state, replacePiece(state.pieces, { ...piece, cards })), ctx.actorId, `lật lá trên ${pieceLabel(piece)}`);
+      const flipText = piece.cards.length > 1 ? `lật lá trên ${pieceLabel(piece)}` : "lật một lá";
+      return note(withPieces(state, replacePiece(state.pieces, { ...piece, cards })), ctx.actorId, flipText);
     }
 
     case "flipAll": {
@@ -441,24 +442,34 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
 
 export const MAX_PLAYERS = 10;
 
-const SLOT_ACCEPTS: Partial<Record<SeatSlot, { test: (id: string) => boolean; refusal: string }>> = {
-  general1: { test: (id) => cardFace(id)?.kind === "general", refusal: "Ô tướng chỉ nhận lá tướng." },
-  general2: { test: (id) => cardFace(id)?.kind === "general", refusal: "Ô tướng chỉ nhận lá tướng." },
-  weapon: { test: (id) => categoryOf(id) === "weapon", refusal: "Ô này chỉ nhận vũ khí." },
-  armor: { test: (id) => categoryOf(id) === "armor", refusal: "Ô này chỉ nhận phòng cụ." },
-  horsePlus: { test: (id) => categoryOf(id) === "mount", refusal: "Ô này chỉ nhận ngựa." },
-  horseMinus: { test: (id) => categoryOf(id) === "mount", refusal: "Ô này chỉ nhận ngựa." },
+export const SLOT_ALLOWS: Record<SeatSlot, readonly CardRole[] | null> = {
+  general1: ["general"],
+  general2: ["general"],
+  weapon: ["weapon"],
+  armor: ["armor"],
+  horsePlus: ["mount"],
+  horseMinus: ["mount"],
+  judgement: null,
 };
 
-function categoryOf(id: string) {
-  const rules = cardRules(id);
-  return rules?.kind === "play" ? rules.category : undefined;
+export function slotAllowsCard(slot: SeatSlot, cardId: CardId) {
+  const allowed = SLOT_ALLOWS[slot];
+  if (!allowed) return true;
+  const role = cardRules(cardId)?.role;
+  return Boolean(role && allowed.includes(role));
 }
 
 function guardSlot(slot: SeatSlot, cards: CardRef[]) {
-  const rule = SLOT_ACCEPTS[slot];
-  if (!rule) return;
-  if (cards.some((card) => !rule.test(card.id))) throw new RuleError(rule.refusal, 409);
+  const allowed = SLOT_ALLOWS[slot];
+  if (!allowed) return;
+  if (cards.every((card) => slotAllowsCard(slot, card.id))) return;
+  const names = allowed.map((role) => ROLE_LABEL[role].toLowerCase()).join(" hoặc ");
+  throw new RuleError(`Ô này chỉ nhận ${names}.`, 409);
+}
+
+function slotText(actorId: string, seat: Seat, slot: SeatSlot) {
+  const where = SEAT_SLOT_TEXT[slot];
+  return actorId === seat.id ? `đặt bài vào ${where} của mình` : `đặt bài vào ${where} của ${seat.name}`;
 }
 
 const SEAT_SLOT_TEXT: Record<SeatSlot, string> = {

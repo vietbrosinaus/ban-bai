@@ -6,9 +6,39 @@ import type { CardFace, CardId, Faction } from "./card";
 
 export type CardCategory = TamQuocSatCardInfo["category"];
 
+export type CardRole = "attack" | "defend" | "heal" | "trick" | "delayed" | "weapon" | "armor" | "mount" | "general";
+
 export type CardRules =
-  | { kind: "play"; category: CardCategory; nameEn: string; ruleVi: string; ruleEn: string }
-  | { kind: "general"; faction: Faction; maxHp: number; skills: readonly TamGeneralSkillInfo[] };
+  | { kind: "play"; category: CardCategory; role: CardRole; nameEn: string; ruleVi: string; ruleEn: string }
+  | { kind: "general"; role: "general"; faction: Faction; maxHp: number; skills: readonly TamGeneralSkillInfo[] };
+
+export const ROLE_LABEL: Record<CardRole, string> = {
+  attack: "Tấn công",
+  defend: "Phòng thủ",
+  heal: "Hồi phục",
+  trick: "Cẩm nang",
+  delayed: "Cẩm nang trì hoãn",
+  weapon: "Vũ khí",
+  armor: "Phòng cụ",
+  mount: "Ngựa",
+  general: "Tướng",
+};
+
+const ATTACK_TYPES = new Set(["slash", "fire_slash", "thunder_slash"]);
+const DEFEND_TYPES = new Set(["dodge", "nullification", "heg_nullification"]);
+const HEAL_TYPES = new Set(["peach", "alcohol"]);
+
+function roleOf(category: CardCategory, cardType: string | undefined): CardRole {
+  if (category === "weapon") return "weapon";
+  if (category === "armor") return "armor";
+  if (category === "mount") return "mount";
+  if (category === "delayed-trick") return "delayed";
+  if (category === "trick") return cardType && DEFEND_TYPES.has(cardType) ? "defend" : "trick";
+  if (cardType && ATTACK_TYPES.has(cardType)) return "attack";
+  if (cardType && DEFEND_TYPES.has(cardType)) return "defend";
+  if (cardType && HEAL_TYPES.has(cardType)) return "heal";
+  return "trick";
+}
 
 export const CATEGORY_LABEL: Record<CardCategory, string> = {
   basic: "Cơ bản",
@@ -85,10 +115,11 @@ export function cardRules(id: CardId): CardRules | undefined {
   if (card.kind === "general") {
     const general = getTamQuocSatGeneralInfo(id);
     if (!general) return undefined;
-    return { kind: "general", faction: general.faction, maxHp: general.maxHp, skills: general.skills };
+    return { kind: "general", role: "general", faction: general.faction, maxHp: general.maxHp, skills: general.skills };
   }
-  const info = getTamQuocSatCardInfo(ruleKeys.get(id));
+  const cardType = ruleKeys.get(id);
+  const info = getTamQuocSatCardInfo(cardType);
   if (!info) return undefined;
-  return { kind: "play", category: info.category, nameEn: info.nameEn, ruleVi: info.ruleVi, ruleEn: info.ruleEn };
+  return { kind: "play", category: info.category, role: roleOf(info.category, cardType), nameEn: info.nameEn, ruleVi: info.ruleVi, ruleEn: info.ruleEn };
 }
 

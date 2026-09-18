@@ -582,7 +582,7 @@ function SlotCard({
         <div
           {...pieceProps(piece)}
           onClick={open}
-          className="relative grid h-full w-full place-items-center p-0.5 transition-transform hover:-translate-y-0.5"
+          className="relative z-0 grid h-full w-full place-items-center p-0.5 transition-transform duration-150 hover:z-30 hover:scale-[2.4]"
         >
           <PlayingCard cardId={top.id} faceDown={!top.faceUp} size="xs" className="h-full w-auto" />
           {piece.cards.length > 1 && (

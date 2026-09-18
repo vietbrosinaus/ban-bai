@@ -10,7 +10,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Separator } from "@/components/ui/separator";
 import { SuitMark } from "@/components/table/suit-mark";
 import { MetaList } from "@/components/ui/meta-list";
-import { CATEGORY_LABEL, cardFace, cardRules } from "@/lib/domain/deck";
+import { CATEGORY_LABEL, ROLE_LABEL, cardFace, cardRules } from "@/lib/domain/deck";
 import { FACTION_LABEL, type CardId } from "@/lib/domain/card";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +33,7 @@ function CardInfoHeader({ cardId }: { cardId: CardId }) {
     <div className="flex flex-wrap items-center gap-2">
       {rules?.kind === "general" ? (
         <>
-          <Badge variant="secondary">Tướng</Badge>
+          <Badge className="border-0 bg-[#17241f] text-white">Tướng</Badge>
           <Badge className={cn("border-0 text-white", FACTION_FILL[rules.faction])}>{FACTION_LABEL[rules.faction]}</Badge>
           <Badge variant="outline" className="gap-1">
             <Heart className="fill-current" />
@@ -42,7 +42,10 @@ function CardInfoHeader({ cardId }: { cardId: CardId }) {
         </>
       ) : (
         <>
-          {rules?.kind === "play" && <Badge variant="secondary">{CATEGORY_LABEL[rules.category]}</Badge>}
+          {rules?.kind === "play" ? <Badge className="border-0 bg-[#17241f] text-white">{ROLE_LABEL[rules.role]}</Badge> : null}
+          {rules?.kind === "play" && CATEGORY_LABEL[rules.category] !== ROLE_LABEL[rules.role] ? (
+            <Badge variant="secondary">{CATEGORY_LABEL[rules.category]}</Badge>
+          ) : null}
           <Badge variant="outline">
             <SuitRank cardId={cardId} />
           </Badge>
@@ -97,6 +100,12 @@ function CardInfo({ cardId, className, ...props }: React.ComponentProps<"div"> &
       <div className="grid content-start gap-3">
         <div className="grid gap-1.5">
           <h2 className="text-xl leading-tight font-semibold">{card.name}</h2>
+          {cardRules(cardId)?.kind === "play" ? (
+            <p className="text-xs text-muted-foreground">
+              {(cardRules(cardId) as { nameEn: string }).nameEn}
+              <span className="ml-2 opacity-70">tên gốc in trên lá bài là tiếng Trung</span>
+            </p>
+          ) : null}
           <CardInfoHeader cardId={cardId} />
         </div>
         <Separator />

@@ -4,6 +4,8 @@ import * as React from "react";
 import { CircleDot, Crosshair, Crown, Hourglass, Shield, ShieldPlus, Swords, type LucideIcon } from "lucide-react";
 
 import { SEAT_SLOT_LABEL, type SeatSlot } from "@/lib/domain/card";
+import { ROLE_LABEL } from "@/lib/domain/deck";
+import { SLOT_ALLOWS } from "@/lib/domain/table";
 import { cn } from "@/lib/utils";
 
 const SLOT_ICON: Record<SeatSlot, LucideIcon> = {
@@ -52,7 +54,7 @@ function SeatBoard({
                 key={slot}
                 data-slot-seat={seatId}
                 data-slot={slot}
-                title={SEAT_SLOT_LABEL[slot]}
+                title={`${SEAT_SLOT_LABEL[slot]}${SLOT_ALLOWS[slot] ? `, chỉ nhận ${SLOT_ALLOWS[slot]!.map((role) => ROLE_LABEL[role].toLowerCase()).join(" hoặc ")}` : ", nhận mọi lá"}`}
                 className={cn(
                   "grid place-items-center rounded-[0.3rem] border border-dashed border-white/20 bg-black/20 transition-colors",
                   "hover:border-gilt/70 hover:bg-gilt/10",
