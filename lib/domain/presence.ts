@@ -1,8 +1,6 @@
 import type { Point } from "./card";
 
 export type Anchor =
-  | { kind: "piece"; id: string }
-  | { kind: "seat"; id: string }
   | { kind: "point"; x: number; y: number }
   | { kind: "home" };
 
@@ -14,7 +12,6 @@ export type Hand = {
 };
 
 export type PresenceLayout = {
-  piece: (id: string) => Point | undefined;
   seat: (id: string) => Point | undefined;
   fallback: Point;
 };
@@ -29,11 +26,8 @@ export const PRESENCE = {
 } as const;
 
 export function sameAnchor(a: Anchor, b: Anchor) {
-  if (a.kind !== b.kind) return false;
   if (a.kind === "point" && b.kind === "point") return Math.abs(a.x - b.x) < 0.004 && Math.abs(a.y - b.y) < 0.004;
-  if (a.kind === "piece" && b.kind === "piece") return a.id === b.id;
-  if (a.kind === "seat" && b.kind === "seat") return a.id === b.id;
-  return true;
+  return a.kind === b.kind;
 }
 
 
@@ -44,10 +38,8 @@ export function crowdOffset(rank: number, sharing: number): Point {
 }
 
 export function resolveAnchor(anchor: Anchor, seatId: string, layout: PresenceLayout): Point {
-  if (anchor.kind === "point") return { x: anchor.x, y: anchor.y };
-  if (anchor.kind === "home") return layout.seat(seatId) ?? layout.fallback;
-  const found = anchor.kind === "piece" ? layout.piece(anchor.id) : layout.seat(anchor.id);
-  return found ?? layout.seat(seatId) ?? layout.fallback;
+  if (anchor.kind === "point" && Number.isFinite(anchor.x) && Number.isFinite(anchor.y)) return { x: anchor.x, y: anchor.y };
+  return layout.seat(seatId) ?? layout.fallback;
 }
 
 export function silenceOf(hand: Hand, now: number) {
@@ -74,12 +66,12 @@ export function placeHands(hands: Hand[], layout: PresenceLayout, now: number) {
 
   const groups = new Map<string, string[]>();
   for (const { hand, anchor } of live) {
-    const key = anchor.kind === "point" ? `point:${anchor.x.toFixed(2)},${anchor.y.toFixed(2)}` : `${anchor.kind}:${"id" in anchor ? anchor.id : hand.seatId}`;
+    const key = anchor.kind === "point" ? `point:${anchor.x.toFixed(2)},${anchor.y.toFixed(2)}` : `home:${hand.seatId}`;
     groups.set(key, [...(groups.get(key) ?? []), hand.seatId].sort());
   }
 
   return live.map(({ hand, anchor, silent }) => {
-    const key = anchor.kind === "point" ? `point:${anchor.x.toFixed(2)},${anchor.y.toFixed(2)}` : `${anchor.kind}:${"id" in anchor ? anchor.id : hand.seatId}`;
+    const key = anchor.kind === "point" ? `point:${anchor.x.toFixed(2)},${anchor.y.toFixed(2)}` : `home:${hand.seatId}`;
     const group = groups.get(key) ?? [hand.seatId];
     const offset = crowdOffset(group.indexOf(hand.seatId), group.length);
     const base = resolveAnchor(anchor, hand.seatId, layout);

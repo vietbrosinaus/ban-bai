@@ -67,18 +67,21 @@ export function useTablePointer({
     settleRef.current = window.setTimeout(() => setAnchor(anchor, grabbing), PRESENCE.settleMs);
   }, [setAnchor]);
 
+  const trackHand = (clientX: number, clientY: number, grabbing = false) => {
+    const { x, y } = toFraction(clientX, clientY);
+    const inside = x >= 0 && x <= 1 && y >= 0 && y <= 1;
+    const anchor: Anchor = inside ? { kind: "point", x, y } : { kind: "home" };
+    setAnchor(anchor, grabbing);
+    settle(anchor, grabbing);
+  };
+
   const feltProps = {
     "data-felt": "",
     ref: feltRef,
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
       if (event.pointerType === "touch") return;
       if (dragRef.current?.moved) return;
-      const { x, y } = toFraction(event.clientX, event.clientY);
-      const target = event.target instanceof Element ? event.target.closest("[data-piece]") : null;
-      const pieceId = target instanceof HTMLElement ? target.dataset.piece : undefined;
-      const anchor: Anchor = pieceId ? { kind: "piece", id: pieceId } : { kind: "point", x, y };
-      setAnchor(anchor);
-      settle(anchor);
+      trackHand(event.clientX, event.clientY);
     },
     onPointerLeave: () => {
       if (settleRef.current !== null) window.clearTimeout(settleRef.current);
@@ -100,7 +103,7 @@ export function useTablePointer({
     if (!drag || drag.pointerId !== pointerId) return;
     dragRef.current = null;
     setTakeCount(0);
-    setAnchor({ kind: "piece", id: drag.pieceId }, false);
+    trackHand(clientX, clientY, false);
     if (!drop || !drag.moved) setDrag(null, 0, 0);
     setDragCardId(null);
     setHoverTarget(null);
@@ -140,12 +143,13 @@ export function useTablePointer({
         drag.moved = true;
         draggedRef.current = true;
         setHeld(drag.pieceId);
-        setAnchor({ kind: "piece", id: drag.pieceId }, true);
+        trackHand(event.clientX, event.clientY, true);
         const top = piece.cards[piece.cards.length - 1];
         setDragCardId(top?.faceUp ? top.id : null);
         if (drag.peel && piece.cards.length > 1) setTakeCount(drag.count);
       }
       setHoverTarget(hitTest(event.clientX, event.clientY, drag.pieceId));
+      trackHand(event.clientX, event.clientY, true);
       const { x, y } = toFraction(event.clientX, event.clientY);
       const at = onTable(x - drag.dx, y - drag.dy);
       setLocalPositions({ [drag.pieceId]: at });
@@ -171,6 +175,7 @@ export function useTablePointer({
     if (!drag || drag.pointerId !== pointerId) return;
     handDragRef.current = null;
     setCarrying(null);
+    if (drag.moved) trackHand(clientX, clientY, false);
     setDragCardId(null);
     setHoverTarget(null);
     if (!drop || !drag.moved) { if (drag.moved) setCarry(null); return; }
@@ -204,6 +209,7 @@ export function useTablePointer({
       setDragCardId(drag.cardId);
       setHoverTarget(hitTest(event.clientX, event.clientY));
       setCarrying({ cardId: drag.cardId, x: event.clientX, y: event.clientY });
+      trackHand(event.clientX, event.clientY, true);
       const at = toFraction(event.clientX, event.clientY);
       setCarry({ x: at.x, y: at.y, back: cardFace(drag.cardId)?.kind === "general" ? "general" : "play" });
     },
@@ -215,6 +221,7 @@ export function useTablePointer({
     const drag = counterDragRef.current;
     if (!drag || drag.pointerId !== pointerId) return;
     counterDragRef.current = null;
+    if (drag.moved) trackHand(clientX, clientY, false);
     if (!drop || !drag.moved) { setHeld(null); setLocalPositions({}); if (drag.moved) setDrag(null, 0, 0); return; }
 
     const target = hitTest(clientX, clientY);
@@ -252,6 +259,7 @@ export function useTablePointer({
       }
       const { x, y } = toFraction(event.clientX, event.clientY);
       const at = onTable(x - drag.dx, y - drag.dy);
+      trackHand(event.clientX, event.clientY, true);
       setLocalPositions({ [drag.counterId]: at });
       setDrag(drag.counterId, at.x, at.y);
     },

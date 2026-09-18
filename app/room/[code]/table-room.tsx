@@ -78,10 +78,6 @@ export default function TableRoom() {
   const hands = useMemo(() => {
     if (!table) return [];
     const layout = {
-      piece: (id: string) => {
-        const piece = table.pieces.find((item) => item.id === id);
-        return piece ? localPositions[id] ?? remoteAt[id] ?? { x: piece.x, y: piece.y } : undefined;
-      },
       seat: (id: string) => seatPoints.get(id),
       fallback: { x: 0.5, y: 0.5 },
     };
@@ -89,7 +85,7 @@ export default function TableRoom() {
       .filter((hand) => hand.seatId !== seatId)
       .map((hand) => ({ ...hand, seat: table.seats.find((seat) => seat.id === hand.seatId) }))
       .filter((hand) => Boolean(hand.seat));
-  }, [localPositions, remoteAt, now, seatId, seatPoints, table]);
+  }, [now, seatId, seatPoints, table]);
 
   async function submitJoin(event: FormEvent) {
     event.preventDefault();
