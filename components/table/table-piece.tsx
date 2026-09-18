@@ -20,7 +20,8 @@ function TablePiece({
 }) {
   return (
     <div
-      data-slot="table-piece"
+      {...props}
+      data-piece-anchor=""
       data-held={held || undefined}
       data-selected={selected || undefined}
       className={cn(
@@ -30,7 +31,6 @@ function TablePiece({
         className
       )}
       style={{ left: `${x * 100}%`, top: `${y * 100}%`, rotate: `${rotation}deg`, ...style }}
-      {...props}
     />
   );
 }

@@ -9,12 +9,14 @@ import type { Point, SeatSlot } from "@/lib/domain/card";
 type DropTarget = { kind: "piece"; id: string } | { kind: "slot"; seatId: string; slot: SeatSlot } | { kind: "seat"; id: string } | { kind: "hand" } | { kind: "felt" } | null;
 
 type Drag = { pieceId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean; peel: boolean; count: number };
+type CounterDrag = { counterId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean };
 type HandDrag = { cardId: string; pointerId: number; startX: number; startY: number; moved: boolean };
 
 function hitTest(clientX: number, clientY: number, ignoreId?: string): DropTarget {
   for (const element of document.elementsFromPoint(clientX, clientY)) {
     const data = (element as HTMLElement).dataset ?? {};
     if (data.piece && data.piece !== ignoreId) return { kind: "piece", id: data.piece };
+    if (data.counterZone !== undefined && data.slotSeat) return { kind: "seat", id: data.slotSeat };
     if (data.slot && data.slotSeat) return { kind: "slot", seatId: data.slotSeat, slot: data.slot as SeatSlot };
     if (data.seat) return { kind: "seat", id: data.seat };
     if (data.handzone !== undefined) return { kind: "hand" };
@@ -35,6 +37,7 @@ export function useTablePointer({
   const feltRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const handDragRef = useRef<HandDrag | null>(null);
+  const counterDragRef = useRef<CounterDrag | null>(null);
   const settleRef = useRef<number | null>(null);
   const [localPositions, setLocalPositions] = useState<Record<string, Point>>({});
   const [held, setHeld] = useState<string | null>(null);
@@ -99,8 +102,10 @@ export function useTablePointer({
       if (event.button !== 0) return;
       event.stopPropagation();
       const { x, y } = toFraction(event.clientX, event.clientY);
+      const box = event.currentTarget.getBoundingClientRect();
+      const origin = toFraction(box.left + box.width / 2, box.top + box.height / 2);
       const peel = peelDefault ? !event.shiftKey : event.shiftKey;
-      dragRef.current = { pieceId: piece.id, pointerId: event.pointerId, dx: x - piece.x, dy: y - piece.y, startX: event.clientX, startY: event.clientY, moved: false, peel, count: 1 };
+      dragRef.current = { pieceId: piece.id, pointerId: event.pointerId, dx: x - origin.x, dy: y - origin.y, startX: event.clientX, startY: event.clientY, moved: false, peel, count: 1 };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -167,5 +172,49 @@ export function useTablePointer({
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endHandDrag(event, false),
   });
 
-  return { feltProps, feltRef, pieceProps, handCardProps, localPositions, held, carrying, takeCount };
+  const endCounterDrag = (event: ReactPointerEvent<HTMLDivElement>, drop: boolean) => {
+    const drag = counterDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    counterDragRef.current = null;
+    setHeld(null);
+    if (!drop || !drag.moved) { setLocalPositions({}); return; }
+
+    const target = hitTest(event.clientX, event.clientY);
+    const { x, y } = toFraction(event.clientX, event.clientY);
+    const finish = () => setLocalPositions({});
+
+    if (target?.kind === "slot" || target?.kind === "seat") {
+      const seatId = target.kind === "slot" ? target.seatId : target.id;
+      void send({ type: "slotCounter", counterId: drag.counterId, seatId }).finally(finish);
+    } else {
+      void send({ type: "moveCounter", counterId: drag.counterId, x: x - drag.dx, y: y - drag.dy }).finally(finish);
+    }
+  };
+
+  const counterProps = (counter: { id: string; x: number; y: number }) => ({
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.stopPropagation();
+      const { x, y } = toFraction(event.clientX, event.clientY);
+      const box = event.currentTarget.getBoundingClientRect();
+      const origin = toFraction(box.left + box.width / 2, box.top + box.height / 2);
+      counterDragRef.current = { counterId: counter.id, pointerId: event.pointerId, dx: x - origin.x, dy: y - origin.y, startX: event.clientX, startY: event.clientY, moved: false };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = counterDragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      if (!drag.moved) {
+        if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
+        drag.moved = true;
+        setHeld(drag.counterId);
+      }
+      const { x, y } = toFraction(event.clientX, event.clientY);
+      setLocalPositions({ [drag.counterId]: { x: x - drag.dx, y: y - drag.dy } });
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event, true),
+    onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endCounterDrag(event, false),
+  });
+
+  return { feltProps, feltRef, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount };
 }

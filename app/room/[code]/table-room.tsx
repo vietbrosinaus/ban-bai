@@ -38,7 +38,7 @@ export default function TableRoom() {
   const params = useParams<{ code: string }>();
   const code = String(params.code ?? "").toUpperCase();
   const { ready, seatId, table, status, pending, fatal, join, send, setAnchor } = useTable(code);
-  const { feltProps, pieceProps, handCardProps, localPositions, held, carrying, takeCount } = useTablePointer({ send, setAnchor });
+  const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, carrying, takeCount } = useTablePointer({ send, setAnchor });
 
   const storedName = useStoredValue("ban-bai:name");
   const [typedName, setTypedName] = useState<string | null>(null);
@@ -167,13 +167,24 @@ export default function TableRoom() {
                 <SeatBoard
                   seatId={seat.id}
                   self={seat.id === seatId}
+                  counters={
+                    (table?.counters ?? []).filter((counter) => counter.slotted && counter.ownerId === seat.id).length ? (
+                      <div className="flex gap-1">
+                        {(table?.counters ?? [])
+                          .filter((counter) => counter.slotted && counter.ownerId === seat.id)
+                          .map((counter) => (
+                            <SeatCounter key={counter.id} counter={counter} seats={players} mySeatId={seatId} send={send} counterProps={counterProps} />
+                          ))}
+                      </div>
+                    ) : undefined
+                  }
                   filled={(slot) => {
                     const piece = table?.pieces.find((item) => item.ownerId === seat.id && item.slot === slot);
                     if (!piece || !piece.cards.length) return null;
                     const top = piece.cards[piece.cards.length - 1];
                     return (
-                      <div {...pieceProps(piece)} className="relative">
-                        <PlayingCard cardId={top.id} faceDown={!top.faceUp} size="xs" className="w-full" />
+                      <div {...pieceProps(piece)} className="relative grid h-full w-full place-items-center p-0.5">
+                        <PlayingCard cardId={top.id} faceDown={!top.faceUp} size="xs" className="h-full w-auto" />
                         {piece.cards.length > 1 && (
                           <Badge variant="destructive" className="absolute -top-1.5 -right-1.5 h-4 min-w-4 justify-center px-1 text-[0.5rem] tabular-nums">
                             {piece.cards.length}
@@ -203,9 +214,19 @@ export default function TableRoom() {
             );
           })}
 
-          {table?.counters.map((counter) => (
-            <CounterOnTable key={counter.id} counter={counter} seats={players} mySeatId={seatId} send={send} />
-          ))}
+          {table?.counters.filter((counter) => !counter.slotted).map((counter) => {
+            const at = localPositions[counter.id] ?? { x: counter.x, y: counter.y };
+            return (
+              <CounterOnTable
+                key={counter.id}
+                counter={{ ...counter, x: at.x, y: at.y }}
+                seats={players}
+                mySeatId={seatId}
+                send={send}
+                counterProps={counterProps}
+              />
+            );
+          })}
 
           {hands.map((hand) => (
             <PlayerCursor
@@ -342,19 +363,127 @@ function HandCard({
   );
 }
 
-function CounterOnTable({
+function CounterMenuItems({
   counter,
   seats,
   mySeatId,
   send,
+  onRename,
+}: {
+  counter: { id: string; label: string; value: number };
+  seats: Array<{ id: string; name: string; colour: string }>;
+  mySeatId: string;
+  send: ReturnType<typeof useTable>["send"];
+  onRename: () => void;
+}) {
+  return (
+    <>
+      <ContextMenuLabel className="flex items-center gap-2"><CircleDot className="size-3.5" />{counter.label}<Dot />{counter.value}</ContextMenuLabel>
+      <ContextMenuSeparator />
+      <ContextMenuItem onSelect={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}><Plus />Tăng 1<ContextMenuShortcut>Nháy chuột</ContextMenuShortcut></ContextMenuItem>
+      <ContextMenuItem onSelect={() => void send({ type: "adjustCounter", counterId: counter.id, delta: -1 })}><Minus />Giảm 1<ContextMenuShortcut>Lăn chuột</ContextMenuShortcut></ContextMenuItem>
+      <ContextMenuItem onSelect={onRename}><PenLine />Đổi tên</ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuLabel className="text-[0.65rem]">Gắn vào ghế</ContextMenuLabel>
+      {seats.map((seat) => (
+        <ContextMenuItem key={seat.id} onSelect={() => void send({ type: "slotCounter", counterId: counter.id, seatId: seat.id })}>
+          <Dot tone="solid" size="md" style={{ color: seat.colour }} />
+          {seat.id === mySeatId ? `${seat.name} (bạn)` : seat.name}
+        </ContextMenuItem>
+      ))}
+      <ContextMenuSeparator />
+      <ContextMenuItem variant="destructive" onSelect={() => void send({ type: "removeCounter", counterId: counter.id })}><Trash2 />Bỏ đi</ContextMenuItem>
+    </>
+  );
+}
+
+function RenameCounter({
+  counter,
+  open,
+  onOpenChange,
+  send,
+}: {
+  counter: { id: string; label: string };
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  send: ReturnType<typeof useTable>["send"];
+}) {
+  const [label, setLabel] = useState(counter.label);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xs">
+        <DialogHeader>
+          <DialogTitle>Đổi tên ô đếm</DialogTitle>
+          <DialogDescription>Tên ngắn, ví dụ máu, vàng, lượt.</DialogDescription>
+        </DialogHeader>
+        <form
+          className="grid gap-3"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (await send({ type: "renameCounter", counterId: counter.id, label })) onOpenChange(false);
+          }}
+        >
+          <Input value={label} onChange={(event) => setLabel(event.target.value)} maxLength={12} autoFocus />
+          <Button type="submit">Đổi tên</Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SeatCounter({
+  counter,
+  seats,
+  mySeatId,
+  send,
+  counterProps,
 }: {
   counter: { id: string; label: string; value: number; x: number; y: number };
   seats: Array<{ id: string; name: string; colour: string }>;
   mySeatId: string;
   send: ReturnType<typeof useTable>["send"];
+  counterProps: ReturnType<typeof useTablePointer>["counterProps"];
 }) {
   const [renaming, setRenaming] = useState(false);
-  const [label, setLabel] = useState(counter.label);
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            {...counterProps(counter)}
+            onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
+          >
+            <CounterChip
+              label={counter.label}
+              value={counter.value}
+              className="size-8 shadow-none"
+              onClick={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}
+            />
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-48">
+          <CounterMenuItems counter={counter} seats={seats} mySeatId={mySeatId} send={send} onRename={() => setRenaming(true)} />
+        </ContextMenuContent>
+      </ContextMenu>
+      <RenameCounter counter={counter} open={renaming} onOpenChange={setRenaming} send={send} />
+    </>
+  );
+}
+
+function CounterOnTable({
+  counter,
+  seats,
+  mySeatId,
+  send,
+  counterProps,
+}: {
+  counter: { id: string; label: string; value: number; x: number; y: number };
+  seats: Array<{ id: string; name: string; colour: string }>;
+  mySeatId: string;
+  send: ReturnType<typeof useTable>["send"];
+  counterProps: ReturnType<typeof useTablePointer>["counterProps"];
+}) {
+  const [renaming, setRenaming] = useState(false);
   return (
     <>
       <ContextMenu>
@@ -362,6 +491,7 @@ function CounterOnTable({
           <TablePiece
             x={counter.x}
             y={counter.y}
+            {...counterProps(counter)}
             onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
           >
             <CounterChip
@@ -372,41 +502,10 @@ function CounterOnTable({
           </TablePiece>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
-          <ContextMenuLabel className="flex items-center gap-2"><CircleDot className="size-3.5" />{counter.label}<Dot />{counter.value}</ContextMenuLabel>
-          <ContextMenuSeparator />
-          <ContextMenuItem onSelect={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}><Plus />Tăng 1<ContextMenuShortcut>Nháy chuột</ContextMenuShortcut></ContextMenuItem>
-          <ContextMenuItem onSelect={() => void send({ type: "adjustCounter", counterId: counter.id, delta: -1 })}><Minus />Giảm 1<ContextMenuShortcut>Lăn chuột</ContextMenuShortcut></ContextMenuItem>
-          <ContextMenuItem onSelect={() => setRenaming(true)}><PenLine />Đổi tên</ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuLabel className="text-[0.65rem]">Gắn vào ghế</ContextMenuLabel>
-          {seats.map((seat) => (
-            <ContextMenuItem key={seat.id} onSelect={() => void send({ type: "slotCounter", counterId: counter.id, seatId: seat.id })}>
-              <Dot tone="solid" size="md" style={{ color: seat.colour }} />
-              {seat.id === mySeatId ? `${seat.name} (bạn)` : seat.name}
-            </ContextMenuItem>
-          ))}
-          <ContextMenuSeparator />
-          <ContextMenuItem variant="destructive" onSelect={() => void send({ type: "removeCounter", counterId: counter.id })}><Trash2 />Bỏ đi</ContextMenuItem>
+          <CounterMenuItems counter={counter} seats={seats} mySeatId={mySeatId} send={send} onRename={() => setRenaming(true)} />
         </ContextMenuContent>
       </ContextMenu>
-      <Dialog open={renaming} onOpenChange={setRenaming}>
-        <DialogContent className="sm:max-w-xs">
-          <DialogHeader>
-            <DialogTitle>Đổi tên ô đếm</DialogTitle>
-            <DialogDescription>Tên ngắn, ví dụ máu, vàng, lượt.</DialogDescription>
-          </DialogHeader>
-          <form
-            className="grid gap-3"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (await send({ type: "renameCounter", counterId: counter.id, label })) setRenaming(false);
-            }}
-          >
-            <Input value={label} onChange={(event) => setLabel(event.target.value)} maxLength={12} autoFocus />
-            <Button type="submit">Đổi tên</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <RenameCounter counter={counter} open={renaming} onOpenChange={setRenaming} send={send} />
     </>
   );
 }

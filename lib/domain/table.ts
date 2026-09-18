@@ -61,6 +61,7 @@ export type Command =
   | { type: "placeInSlot"; pieceId: string; seatId: string; slot: SeatSlot }
   | { type: "playToSlot"; cardId: CardId; seatId: string; slot: SeatSlot; faceUp: boolean }
   | { type: "releaseSlot"; pieceId: string; x: number; y: number }
+  | { type: "moveCounter"; counterId: string; x: number; y: number }
   | { type: "slotCounter"; counterId: string; seatId: string }
   | { type: "renameCounter"; counterId: string; label: string }
   | { type: "proposeClear" }
@@ -217,6 +218,17 @@ function route(state: TableState, command: Command, ctx: CommandContext): TableS
       const piece = pieceOf(state, command.pieceId);
       const freed = { ...piece, ownerId: undefined, slot: undefined, x: clamp(command.x), y: clamp(command.y) };
       return withPieces(state, replacePiece(state.pieces, freed));
+    }
+
+    case "moveCounter": {
+      return {
+        ...state,
+        counters: state.counters.map((counter) =>
+          counter.id === command.counterId
+            ? { ...counter, x: clamp(command.x), y: clamp(command.y), ownerId: undefined, slotted: false }
+            : counter,
+        ),
+      };
     }
 
     case "slotCounter": {
@@ -475,5 +487,5 @@ export function viewFor(state: TableState, viewerId: string): TableView {
 
 export function seatPoint(index: number, ringSize: number): Point {
   const angle = (index / Math.max(1, ringSize)) * Math.PI * 2 + Math.PI / 2;
-  return { x: 0.5 - Math.cos(angle) * 0.40, y: 0.5 + Math.sin(angle) * 0.33 };
+  return { x: 0.5 - Math.cos(angle) * 0.38, y: 0.5 + Math.sin(angle) * 0.30 };
 }

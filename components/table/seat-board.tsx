@@ -1,9 +1,20 @@
 "use client";
 
 import * as React from "react";
+import { CircleDot, Crosshair, Crown, Hourglass, Shield, ShieldPlus, Swords, type LucideIcon } from "lucide-react";
 
 import { SEAT_SLOT_LABEL, type SeatSlot } from "@/lib/domain/card";
 import { cn } from "@/lib/utils";
+
+const SLOT_ICON: Record<SeatSlot, LucideIcon> = {
+  general1: Crown,
+  general2: Crown,
+  weapon: Swords,
+  armor: Shield,
+  horsePlus: ShieldPlus,
+  horseMinus: Crosshair,
+  judgement: Hourglass,
+};
 
 const ROWS: SeatSlot[][] = [
   ["general1", "general2"],
@@ -15,14 +26,14 @@ function SeatBoard({
   seatId,
   self = false,
   filled,
-  renderSlot,
+  counters,
   className,
   ...props
 }: React.ComponentProps<"div"> & {
   seatId: string;
   self?: boolean;
   filled: (slot: SeatSlot) => React.ReactNode;
-  renderSlot?: (slot: SeatSlot) => React.ReactNode;
+  counters?: React.ReactNode;
 }) {
   return (
     <div
@@ -31,7 +42,7 @@ function SeatBoard({
       {...props}
     >
       {ROWS.map((row, index) => (
-        <div key={index} className="flex gap-1">
+        <div key={index} className="flex items-center gap-1">
           {row.map((slot) => {
             const content = filled(slot);
             return (
@@ -43,17 +54,28 @@ function SeatBoard({
                 className={cn(
                   "grid place-items-center rounded-[0.3rem] border border-dashed border-white/20 bg-black/20 transition-colors",
                   "hover:border-gilt/70 hover:bg-gilt/10",
-                  slot === "judgement" ? "h-7 w-[4.4rem]" : "h-7 w-5",
-                  self && (slot === "judgement" ? "h-9 w-24" : "h-9 w-6.5"),
+                  slot === "judgement" ? "h-11 w-[5.5rem]" : "h-11 w-8",
+                  self && (slot === "judgement" ? "h-[3.85rem] w-[7.5rem]" : "h-[3.85rem] w-11"),
                   content && "border-solid border-white/30 bg-transparent",
                 )}
               >
-                {content ?? renderSlot?.(slot) ?? (
-                  <span className="text-[0.4rem] leading-none text-white/25">{SEAT_SLOT_LABEL[slot].slice(0, 2)}</span>
-                )}
+                {content ?? React.createElement(SLOT_ICON[slot], { className: "size-3.5 text-white/30" })}
               </div>
             );
           })}
+          {row[0] === "judgement" ? (
+            <div
+              data-slot-seat={seatId}
+              data-counter-zone=""
+              title="Ô đếm"
+              className={cn(
+                "flex min-w-11 items-center justify-center gap-1 rounded-full border border-dashed border-white/20 bg-black/20 px-1 transition-colors hover:border-gilt/70 hover:bg-gilt/10",
+                self ? "h-[3.85rem]" : "h-11",
+              )}
+            >
+              {counters ?? <CircleDot className="size-3.5 text-white/30" />}
+            </div>
+          ) : null}
         </div>
       ))}
     </div>

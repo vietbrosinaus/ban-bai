@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Armchair, Layers } from "lucide-react";
 
 import { MetaList } from "@/components/ui/meta-list";
 import { cn } from "@/lib/utils";
@@ -34,9 +35,17 @@ function SeatBadge({
       {...props}
     >
       <b className="max-w-full truncate text-[0.78rem] leading-none font-semibold" style={{ color: colour }}>{name}</b>
-      <MetaList className="text-[0.6rem] leading-none text-white/50">
-        <span className="tabular-nums">{handCount} lá</span>
-        {seatNumber === undefined ? null : <span className="tabular-nums">ghế {seatNumber}</span>}
+      <MetaList className="text-[0.62rem] leading-none text-white/55">
+        <span className="inline-flex items-center gap-1" title={`${handCount} lá trên tay`}>
+          <Layers className="size-3 opacity-70" />
+          <b className="font-semibold tabular-nums">{handCount}</b>
+        </span>
+        {seatNumber === undefined ? null : (
+          <span className="inline-flex items-center gap-1" title={`Ghế ${seatNumber}`}>
+            <Armchair className="size-3 opacity-70" />
+            <b className="font-semibold tabular-nums">{seatNumber}</b>
+          </span>
+        )}
       </MetaList>
     </div>
   );
