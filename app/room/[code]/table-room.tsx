@@ -2,8 +2,8 @@
 
 import { BookOpenText, Check, CircleDot, Copy, Eye, Layers, LoaderCircle, Minus, PenLine, Plus, Trash2, Users, Wifi, WifiOff } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { type FormEvent, Suspense, useContext, useEffect, useMemo, useState } from "react";
 
 import { CardInfoDialog } from "@/components/table/card-info";
 import { CardStack } from "@/components/table/card-stack";
@@ -12,6 +12,7 @@ import { EmptyHand } from "@/components/table/empty-hand";
 import { TablePing } from "@/components/table/table-ping";
 import { CounterChip } from "@/components/table/counter-chip";
 import { Felt } from "@/components/table/felt";
+import { FitStage } from "@/components/table/fit-stage";
 import { HandTray } from "@/components/table/hand-tray";
 import { HowToPlay } from "@/components/table/how-to-play";
 import { PlayerCursor } from "@/components/table/player-cursor";
@@ -38,6 +39,9 @@ import { cardKind, landingSlot, onTable, pieceKind, pieceLabel, seatPoint, type 
 
 import { PIECE_MENU } from "./piece-menu";
 import { TakeSome } from "./take-some";
+import { LAYOUT_VARIANTS, RoomBodyPrototype } from "./layout-prototype";
+import { SelectionContext, describeSelection, type Selected } from "./selection-actions";
+import { VariantSwitcher } from "@/components/prototype/variant-switcher";
 import { HandUtilities } from "./table-controls";
 import { ClearVoteBanner, TableMenu } from "./table-menu";
 
@@ -56,6 +60,10 @@ export default function TableRoom() {
     ? { seatId: hoverTarget.seatId, slot: landingSlot(table?.pieces ?? [], hoverTarget.seatId, hoverTarget.slot, dragCardId) }
     : null;
   const handCount = table?.hand.length ?? 0;
+  const variant = useSearchParams().get("variant") ?? "A";
+  const [selected, setSelected] = useState<Selected>(null);
+  const [infoCard, setInfoCard] = useState<string | null>(null);
+  const [takeFrom, setTakeFrom] = useState<string | null>(null);
   const remoteAt = useMemo(
     () => Object.fromEntries(Object.values(remoteDrags).map((drag) => [drag.pieceId, { x: drag.x, y: drag.y }])) as Record<string, { x: number; y: number }>,
     [remoteDrags],
@@ -135,7 +143,21 @@ export default function TableRoom() {
     );
   }
 
+  const myPoint = seatPoints.get(seatId) ?? { x: 0.5, y: 0.85 };
+  const view = describeSelection({
+    selected,
+    table,
+    seatId,
+    home: { x: myPoint.x + (0.5 - myPoint.x) * 0.4, y: myPoint.y + (0.5 - myPoint.y) * 0.4 },
+    send,
+    openInfo: setInfoCard,
+    openTakeSome: setTakeFrom,
+    clear: () => setSelected(null),
+  });
+  const takePiece = takeFrom ? table?.pieces.find((piece) => piece.id === takeFrom) : undefined;
+
   return (
+    <SelectionContext.Provider value={{ selected, select: setSelected }}>
     <main className="grid h-svh grid-cols-[minmax(0,1fr)] grid-rows-[3.25rem_minmax(0,1fr)_11rem] overflow-hidden bg-[#0a1713] text-[#f2ede0] [color-scheme:dark] select-none">
       <header className="flex items-center gap-2.5 bg-felt-deep/70 px-4 text-sm">
         <b className="text-base">Bàn Bài</b>
@@ -166,9 +188,19 @@ export default function TableRoom() {
         </div>
       </header>
 
-      <div className="grid min-h-0 grid-cols-1 gap-3 px-3 py-3 xl:grid-cols-[minmax(0,1fr)_14rem]">
-        <div className="grid min-h-0 place-items-center">
-        <Felt {...feltProps} className="aspect-[16/10] max-h-full w-full max-w-[min(100%,72rem)]">
+      <RoomBodyPrototype
+        variant={variant}
+        view={view}
+        selectionKey={selected ? JSON.stringify(selected) : "none"}
+        felt={
+        <FitStage>
+        <Felt
+          {...feltProps}
+          onClick={(event) => {
+            if (!(event.target as HTMLElement).closest("[data-piece],[data-seat],[data-slot-seat],[data-slot=counter-chip],[data-overlay]")) setSelected(null);
+          }}
+          className="size-full rounded-[11.875rem]"
+        >
           {players.map((seat) => {
             const point = seatPoints.get(seat.id) ?? { x: 0.5, y: 0.5 };
             const below = point.y > 0.5;
@@ -290,12 +322,10 @@ export default function TableRoom() {
             <ClearVoteBanner vote={table.clearVote} players={players.length} seatId={seatId} seats={table.seats} send={send} />
           ) : null}
         </Felt>
-        </div>
-
-        <aside className="hidden min-h-0 xl:grid">
-          <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-1.5 rounded-2xl border border-white/10 bg-felt-deep/40 p-3">
-            <h2 className="text-[0.6rem] tracking-wider text-white/40 uppercase">Diễn biến</h2>
-            <ScrollArea className="min-h-0 [&_[data-slot=scroll-area-thumb]]:bg-white/20">
+        </FitStage>
+        }
+        log={
+            <ScrollArea className="h-full min-h-0 [&_[data-slot=scroll-area-thumb]]:bg-white/20">
               <ol className="pr-3 text-[0.7rem] leading-relaxed">
                 {[...(table?.log ?? [])].reverse().map((entry) => (
                   <li key={entry.id} className="border-b border-white/5 py-1 text-white/60 last:border-0">
@@ -307,13 +337,13 @@ export default function TableRoom() {
                 ))}
               </ol>
             </ScrollArea>
-          </section>
-        </aside>
-      </div>
+        }
+      />
 
       <section
         data-handzone
         data-dropping={dropping || undefined}
+        onClick={(event) => { if (!(event.target as HTMLElement).closest("[data-slot=hand-card],button")) setSelected(null); }}
         className={cn(
           "relative grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] px-4 pt-3.5 transition-[box-shadow,background-image] duration-200",
           "bg-[radial-gradient(ellipse_at_50%_-40%,rgba(24,133,99,0.35),transparent_70%),linear-gradient(#06100d,#040b09)]",
@@ -410,7 +440,11 @@ export default function TableRoom() {
           </form>
         </DialogContent>
       </Dialog>
+      {infoCard ? <CardInfoDialog cardId={infoCard} open onOpenChange={(open) => { if (!open) setInfoCard(null); }} /> : null}
+      {takePiece ? <TakeSome piece={takePiece} onClose={() => setTakeFrom(null)} send={send} /> : null}
+      <Suspense fallback={null}><VariantSwitcher variants={LAYOUT_VARIANTS} /></Suspense>
     </main>
+    </SelectionContext.Provider>
   );
 }
 
@@ -426,12 +460,14 @@ function HandCard({
   send: ReturnType<typeof useTable>["send"];
 }) {
   const [info, setInfo] = useState(false);
+  const { selected, select } = useContext(SelectionContext);
+  const chosen = selected?.kind === "hand" && selected.cardId === cardId;
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div {...handCardProps(cardId, () => setInfo(true))}>
-            <PlayingCard cardId={cardId} size="md" className="transition-transform hover:-translate-y-1" />
+          <div {...handCardProps(cardId, () => select({ kind: "hand", cardId }))}>
+            <PlayingCard cardId={cardId} size="md" className={cn("transition-transform hover:-translate-y-1", chosen && "-translate-y-4 outline-2 outline-offset-2 outline-gilt")} />
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
@@ -543,18 +579,20 @@ function SeatCounter({
   counterProps: ReturnType<typeof useTablePointer>["counterProps"];
 }) {
   const [renaming, setRenaming] = useState(false);
+  const { selected, select } = useContext(SelectionContext);
+  const chosen = selected?.kind === "counter" && selected.id === counter.id;
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            {...counterProps(counter, () => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 }))}
+            {...counterProps(counter, () => select({ kind: "counter", id: counter.id }))}
             onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
           >
             <CounterChip
               label={counter.label}
               value={counter.value}
-              className={cn("shadow-none", self ? "size-11" : "size-8")}
+              className={cn("shadow-none", self ? "size-11" : "size-8", chosen && "outline-2 outline-offset-2 outline-gilt")}
             />
           </div>
         </ContextMenuTrigger>
@@ -581,6 +619,8 @@ function CounterOnTable({
   counterProps: ReturnType<typeof useTablePointer>["counterProps"];
 }) {
   const [renaming, setRenaming] = useState(false);
+  const { selected, select } = useContext(SelectionContext);
+  const chosen = selected?.kind === "counter" && selected.id === counter.id;
   return (
     <>
       <ContextMenu>
@@ -588,10 +628,10 @@ function CounterOnTable({
           <TablePiece
             x={counter.x}
             y={counter.y}
-            {...counterProps(counter, () => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 }))}
+            {...counterProps(counter, () => select({ kind: "counter", id: counter.id }))}
             onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
           >
-            <CounterChip label={counter.label} value={counter.value} />
+            <CounterChip label={counter.label} value={counter.value} className={cn(chosen && "outline-2 outline-offset-2 outline-gilt")} />
           </TablePiece>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-48">
@@ -665,15 +705,17 @@ function SlotCard({
   send: ReturnType<typeof useTable>["send"];
 }) {
   const top = piece.cards[piece.cards.length - 1];
+  const { selected, select } = useContext(SelectionContext);
+  const chosen = selected?.kind === "piece" && selected.id === piece.id;
   return (
     <CardShell piece={piece} send={send}>
-      {(open) => (
+      {() => (
         <div
-          {...pieceProps(piece, open)}
+          {...pieceProps(piece, () => select({ kind: "piece", id: piece.id }))}
           data-slotted=""
           className="relative z-0 grid h-full w-full place-items-center p-0.5 transition-transform duration-150 hover:z-30 hover:scale-[2.4]"
         >
-          <PlayingCard cardId={top.id} faceDown={!top.faceUp} size="xs" className="h-full w-auto" />
+          <PlayingCard cardId={top.id} faceDown={!top.faceUp} size="xs" className={cn("h-full w-auto", chosen && "outline-2 outline-offset-2 outline-gilt")} />
           {piece.cards.length > 1 && (
             <Badge variant="destructive" className="absolute -top-1.5 -right-1.5 h-4 min-w-4 justify-center px-1 text-[0.5rem] tabular-nums">
               {piece.cards.length}
@@ -709,15 +751,17 @@ function PieceOnTable({
   send: ReturnType<typeof useTable>["send"];
 }) {
   const single = piece.cards.length === 1 && !piece.tag;
+  const { selected, select } = useContext(SelectionContext);
+  const chosen = selected?.kind === "piece" && selected.id === piece.id;
   return (
     <CardShell piece={piece} send={send}>
-      {(open) => (
+      {() => (
         <TablePiece
           x={x}
           y={y}
           rotation={piece.rotation}
           held={held}
-          {...pieceProps(piece, open)}
+          {...pieceProps(piece, () => select({ kind: "piece", id: piece.id }))}
           className={cn("group", lifted && "opacity-0")}
         >
           <CardStack
@@ -727,6 +771,7 @@ function PieceOnTable({
             className={cn(
               "transition-transform duration-150 group-hover:-translate-y-0.5",
               refusing && "rounded-[7%] outline-2 outline-offset-2 outline-red-400",
+              chosen && !refusing && "rounded-[7%] outline-2 outline-offset-2 outline-gilt",
             )}
           />
           {refusing ? (
