@@ -38,7 +38,7 @@ const SECTIONS: Section[] = [
     title: "Rút bài",
     moves: [
       { icon: Hand, action: "Rút 1 lá", how: ["Nháy đúp vào chồng bài"] },
-      { icon: WalletCards, action: "Rút nhiều lá một lần", how: ["Chuột phải vào chồng bài", "Rút nhiều lá"] },
+      { icon: WalletCards, action: "Rút nhiều lá một lần", how: ["Chạm vào chồng bài", "Rút nhiều lá"] },
       { icon: HandGrab, action: "Cầm cả chồng", how: ["Kéo chồng bài xuống khay tay"] },
       { icon: Scissors, action: "Tách vài lá ra", how: ["Shift", "kéo chồng bài", "lăn chuột chọn số lá"] },
     ],
@@ -59,15 +59,15 @@ const SECTIONS: Section[] = [
       { icon: Layers, action: "Gộp hai chồng", how: ["Thả chồng này lên chồng kia"] },
       { icon: FlipHorizontal2, action: "Lật lá trên cùng", how: ["Chuột giữa"] },
       { icon: RotateCw, action: "Xoay", how: ["Lăn chuột"] },
-      { icon: MousePointer2, action: "Xào, trải, cắt đôi, úp hoặc ngửa cả chồng", how: ["Chuột phải"] },
-      { icon: BookOpenText, action: "Xem luật một lá", how: ["Nháy chuột vào lá đang ngửa"] },
+      { icon: MousePointer2, action: "Xào, trải, cắt đôi, úp hoặc ngửa cả chồng", how: ["Chạm vào chồng bài", "chọn ở bảng Thao tác"] },
+      { icon: BookOpenText, action: "Xem luật một lá", how: ["Chạm vào lá", "Xem luật"] },
       { icon: Radar, action: "Chỉ cho cả bàn xem", how: ["Nháy đúp vào chỗ trống trên bàn"] },
     ],
   },
   {
     title: "Ô đếm máu và điểm",
     moves: [
-      { icon: CircleDot, action: "Cộng 1, tăng giảm, di chuyển", how: ["Nháy chuột", "lăn chuột", "kéo"] },
+      { icon: CircleDot, action: "Cộng, trừ, di chuyển", how: ["Chạm vào ô đếm", "kéo để di chuyển"] },
     ],
   },
 ];
@@ -117,7 +117,7 @@ function HowToPlay() {
         <DialogHeader>
           <DialogTitle className="font-serif text-xl">Cách chơi</DialogTitle>
           <DialogDescription>
-            Bàn này không bắt luật. Nó chỉ di chuyển bài, cả bàn tự giữ luật với nhau như ngồi chơi thật.
+            Bàn này không bắt luật. Nó chỉ di chuyển bài, cả bàn tự giữ luật với nhau như ngồi chơi thật. Chạm vào bất cứ lá bài, chồng bài hay ô đếm nào để xem thao tác ở bảng bên trái.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="-mr-4 pr-4 [&_[data-slot=scroll-area-viewport]]:max-h-[calc(85svh-10rem)]">
