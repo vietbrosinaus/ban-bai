@@ -84,7 +84,7 @@ function RoomBody({ felt, log, view }: { felt: ReactNode; log: ReactNode; view: 
   const [actionsOpen, setActionsOpen] = useState(true);
   const [logOpen, setLogOpen] = useState(true);
   return (
-    <div className="grid min-h-0 grid-cols-[auto_minmax(0,1fr)_auto] gap-3 px-3 py-3">
+    <div className="grid min-h-0 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)] gap-3 px-3 py-3">
       <SidePanel side="left" title="Thao tác" icon={MousePointerClick} open={actionsOpen} onToggle={() => setActionsOpen(!actionsOpen)}>
         {view ? (
           <ScrollArea className="h-full [&_[data-slot=scroll-area-thumb]]:bg-white/20">

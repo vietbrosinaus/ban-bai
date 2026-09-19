@@ -4,19 +4,24 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const STAGE_WIDTH = 1152;
-const STAGE_HEIGHT = 720;
+const LONG_SIDE = 1152;
+const SHORT_SIDE = 720;
+
+type Stage = { scale: number; width: number; height: number };
 
 function FitStage({ className, children }: { className?: string; children: React.ReactNode }) {
   const frame = React.useRef<HTMLDivElement>(null);
-  const [scale, setScale] = React.useState(1);
+  const [stage, setStage] = React.useState<Stage>({ scale: 1, width: LONG_SIDE, height: SHORT_SIDE });
 
   React.useLayoutEffect(() => {
     const element = frame.current;
     if (!element) return;
     const fit = () => {
       const { width, height } = element.getBoundingClientRect();
-      setScale(Math.min(1, width / STAGE_WIDTH, height / STAGE_HEIGHT));
+      if (!width || !height) return;
+      const landscape = width >= height;
+      const scale = Math.min(1, width / (landscape ? LONG_SIDE : SHORT_SIDE), height / (landscape ? SHORT_SIDE : LONG_SIDE));
+      setStage({ scale, width: width / scale, height: height / scale });
     };
     fit();
     const observer = new ResizeObserver(fit);
@@ -25,11 +30,12 @@ function FitStage({ className, children }: { className?: string; children: React
   }, []);
 
   return (
-    <div ref={frame} data-slot="fit-stage" className={cn("grid min-h-0 min-w-0 place-items-center overflow-hidden", className)}>
-      <div style={{ width: STAGE_WIDTH * scale, height: STAGE_HEIGHT * scale }}>
-        <div style={{ width: STAGE_WIDTH, height: STAGE_HEIGHT, transform: `scale(${scale})`, transformOrigin: "top left" }}>
-          {children}
-        </div>
+    <div ref={frame} data-slot="fit-stage" className={cn("relative size-full min-h-0 min-w-0 overflow-hidden", className)}>
+      <div
+        className="absolute top-0 left-0"
+        style={{ width: stage.width, height: stage.height, transform: `scale(${stage.scale})`, transformOrigin: "top left" }}
+      >
+        {children}
       </div>
     </div>
   );
