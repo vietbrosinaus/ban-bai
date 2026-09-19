@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { useHydrated, useStoredValue } from "@/hooks/use-hydrated";
 
-import { PRESENCE, nextAnchorToSend, type Anchor } from "@/lib/domain/presence";
+import { PRESENCE, nextAnchorToSend, type Anchor, type Hand } from "@/lib/domain/presence";
 import type { SeatRole } from "@/lib/domain/card";
 import type { Carry, ClientMessage, ServerMessage, TableSnapshot } from "@/lib/domain/protocol";
 import type { Command } from "@/lib/domain/table";
@@ -22,6 +22,24 @@ const PING_GAP_MS = 350;
 const PING_LIFE_MS = 1600;
 const HOST = partyHost();
 
+export type HandsStore = { get: () => Hand[]; subscribe: (listener: () => void) => () => void };
+
+function createHandsStore() {
+  let hands: Hand[] = [];
+  const listeners = new Set<() => void>();
+  return {
+    get: () => hands,
+    set: (next: Hand[]) => {
+      hands = next;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+  };
+}
+
 function seatKey(code: string) {
   return `ban-bai:${code}:seat`;
 }
@@ -32,6 +50,7 @@ export function useTable(code: string) {
   const [joinedSeat, setJoinedSeat] = useState("");
   const seatId = joinedSeat || storedSeat;
   const [table, setTable] = useState<TableSnapshot | null>(null);
+  const [handsStore] = useState(createHandsStore);
   const [status, setStatus] = useState<TableStatus>(HOST ? "joining" : "missing");
   const [pending, setPending] = useState<string | null>(null);
   const [fatal, setFatal] = useState(HOST ? "" : MISSING_HOST);
@@ -77,12 +96,12 @@ export function useTable(code: string) {
       if (message.t === "snapshot") {
         tableRef.current = message.snapshot;
         setTable(message.snapshot);
+        handsStore.set(message.snapshot.liveHands);
         setStatus("live");
         return;
       }
       if (message.t === "hands") {
-        const merged = tableRef.current ? { ...tableRef.current, liveHands: message.hands } : null;
-        if (merged) { tableRef.current = merged; setTable(merged); }
+        handsStore.set(message.hands);
         return;
       }
       if (message.t === "drag") {
@@ -135,7 +154,7 @@ export function useTable(code: string) {
       socket.close();
       socketRef.current = null;
     };
-  }, [code, ready, seatId, showPing]);
+  }, [code, ready, seatId, showPing, handsStore]);
 
   const join = useCallback(async (name: string, role: SeatRole = "player") => {
     const response = await fetch(tableDoor(code), {
@@ -212,5 +231,5 @@ export function useTable(code: string) {
     socket.send(JSON.stringify({ t: "ping", x, y } satisfies ClientMessage));
   }, [seatId, showPing]);
 
-  return { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, setCarry, ping, remoteDrags, remoteCarries, pings, settleMs: PRESENCE.settleMs };
+  return { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, setCarry, ping, remoteDrags, remoteCarries, pings, handsStore, settleMs: PRESENCE.settleMs };
 }

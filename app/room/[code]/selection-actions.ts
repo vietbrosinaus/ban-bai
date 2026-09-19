@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import { BookOpenText, Eye, EyeOff, Gift, Layers, Minus, Plus, Trash2, Undo2, type LucideIcon } from "lucide-react";
+import { Armchair, BookOpenText, Eye, EyeOff, Gift, Layers, Minus, PenLine, Plus, Trash2, Undo2, type LucideIcon } from "lucide-react";
 
 import { SUIT_SYMBOL, type Point } from "@/lib/domain/card";
 import { cardFace } from "@/lib/domain/deck";
@@ -11,7 +11,7 @@ export type Selected = { kind: "piece"; id: string } | { kind: "hand"; cardId: s
 
 export const SelectionContext = createContext<{ selected: Selected; select: (next: Selected) => void }>({ selected: null, select: () => undefined });
 
-export type EntityAction = { key: string; label: string; icon: LucideIcon; run: () => void; danger?: boolean };
+export type EntityAction = { key: string; label: string; icon: LucideIcon; run: () => void; hint?: string; danger?: boolean };
 
 export type SelectionView = { title: string; detail: string; cardId?: string; actions: EntityAction[] };
 
@@ -25,6 +25,7 @@ export function describeSelection({
   send,
   openInfo,
   openTakeSome,
+  openRename,
   clear,
 }: {
   selected: Selected;
@@ -34,6 +35,7 @@ export function describeSelection({
   send: (command: Command) => unknown;
   openInfo: (cardId: string) => void;
   openTakeSome: (pieceId: string) => void;
+  openRename: (counterId: string) => void;
   clear: () => void;
 }): SelectionView | null {
   if (!selected || !table) return null;
@@ -51,6 +53,7 @@ export function describeSelection({
         key: item.key,
         label: item.label,
         icon: item.icon,
+        hint: item.gesture,
         run: () => ("asks" in item ? openTakeSome(piece.id) : void send(item.command(piece))),
       });
     }
@@ -75,14 +78,14 @@ export function describeSelection({
     };
     const actions: EntityAction[] = [
       { key: "info", label: "Xem luật", icon: BookOpenText, run: () => openInfo(cardId) },
-      { key: "down", label: "Đánh úp ra bàn", icon: EyeOff, run: () => play(false) },
-      { key: "up", label: "Đánh ngửa ra bàn", icon: Eye, run: () => play(true) },
+      { key: "down", label: "Đánh úp ra bàn", icon: EyeOff, hint: "Kéo lên bàn", run: () => play(false) },
+      { key: "up", label: "Đánh ngửa ra bàn", icon: Eye, hint: "Kéo bằng chuột phải", run: () => play(true) },
       general
-        ? { key: "home", label: "Trả về chồng tướng", icon: Undo2, run: () => { void send({ type: "playOntoPiece", cardId, pieceId: "generals", faceUp: false }); clear(); } }
-        : { key: "discard", label: "Bỏ vào chồng bài bỏ", icon: Layers, run: () => { void send({ type: "playOntoPiece", cardId, pieceId: "discard", faceUp: true }); clear(); } },
+        ? { key: "home", label: "Trả về chồng tướng", icon: Undo2, hint: "Kéo vào chồng tướng", run: () => { void send({ type: "playOntoPiece", cardId, pieceId: "generals", faceUp: false }); clear(); } }
+        : { key: "discard", label: "Bỏ vào chồng bài bỏ", icon: Layers, hint: "Kéo vào chồng bài bỏ", run: () => { void send({ type: "playOntoPiece", cardId, pieceId: "discard", faceUp: true }); clear(); } },
       ...table.seats
         .filter((seat) => seat.role === "player" && seat.id !== seatId)
-        .map((seat) => ({ key: `give:${seat.id}`, label: `Đưa cho ${seat.name}`, icon: Gift, run: () => { void send({ type: "giveToSeat", cardId, seatId: seat.id }); clear(); } })),
+        .map((seat) => ({ key: `give:${seat.id}`, label: `Đưa cho ${seat.name}`, icon: Gift, hint: "Kéo vào bảng tên", run: () => { void send({ type: "giveToSeat", cardId, seatId: seat.id }); clear(); } })),
     ];
     return {
       title: face?.name ?? "Lá bài",
@@ -94,12 +97,22 @@ export function describeSelection({
 
   const counter = table.counters.find((item) => item.id === selected.id);
   if (!counter) return null;
+  const owner = counter.slotted ? table.seats.find((seat) => seat.id === counter.ownerId)?.name : undefined;
+  const players = table.seats.filter((seat) => seat.role === "player");
   return {
     title: counter.label || "Ô đếm",
-    detail: `Giá trị ${counter.value}`,
+    detail: [`Giá trị ${counter.value}`, owner ? `trên ghế ${owner}` : null].filter(Boolean).join(" · "),
     actions: [
-      { key: "plus", label: "Tăng 1", icon: Plus, run: () => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 }) },
-      { key: "minus", label: "Giảm 1", icon: Minus, run: () => void send({ type: "adjustCounter", counterId: counter.id, delta: -1 }) },
+      { key: "plus", label: "Tăng 1", icon: Plus, hint: "Lăn chuột lên", run: () => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 }) },
+      { key: "minus", label: "Giảm 1", icon: Minus, hint: "Lăn chuột xuống", run: () => void send({ type: "adjustCounter", counterId: counter.id, delta: -1 }) },
+      { key: "rename", label: "Đổi tên", icon: PenLine, run: () => openRename(counter.id) },
+      ...players.map((seat) => ({
+        key: `seat:${seat.id}`,
+        label: `Gắn vào ghế ${seat.id === seatId ? `${seat.name} (bạn)` : seat.name}`,
+        icon: Armchair,
+        hint: "Kéo vào ghế",
+        run: () => void send({ type: "slotCounter", counterId: counter.id, seatId: seat.id }),
+      })),
       { key: "remove", label: "Bỏ đi", icon: Trash2, danger: true, run: () => { void send({ type: "removeCounter", counterId: counter.id }); clear(); } },
     ],
   };

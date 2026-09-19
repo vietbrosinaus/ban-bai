@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenText, Check, CircleDot, Copy, Eye, Layers, LoaderCircle, Minus, PenLine, Plus, Trash2, Users, Wifi, WifiOff } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Copy, Eye, Layers, LoaderCircle, Users, Wifi, WifiOff } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { type FormEvent, useContext, useEffect, useMemo, useState } from "react";
@@ -15,7 +15,7 @@ import { Felt } from "@/components/table/felt";
 import { FitStage } from "@/components/table/fit-stage";
 import { HandTray } from "@/components/table/hand-tray";
 import { HowToPlay } from "@/components/table/how-to-play";
-import { PlayerCursor } from "@/components/table/player-cursor";
+import { RemoteHands } from "@/components/table/remote-hands";
 import { CardBack, PlayingCard } from "@/components/table/playing-card";
 import { SeatBadge } from "@/components/table/seat-badge";
 import { SeatBoard } from "@/components/table/seat-board";
@@ -23,21 +23,17 @@ import { TablePiece } from "@/components/table/table-piece";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Dot } from "@/components/ui/dot";
 import { Input } from "@/components/ui/input";
 import { MetaList } from "@/components/ui/meta-list";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useStoredValue } from "@/hooks/use-hydrated";
 import { useTable } from "@/hooks/use-table";
 import { useTablePointer } from "@/hooks/use-table-pointer";
-import { placeHands } from "@/lib/domain/presence";
 import { cn } from "@/lib/utils";
 import { cardFace } from "@/lib/domain/deck";
-import { cardKind, landingSlot, onTable, pieceKind, pieceLabel, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
+import { cardKind, landingSlot, onTable, pieceKind, seatPoint, type TablePiece as Piece } from "@/lib/domain/table";
 
-import { PIECE_MENU } from "./piece-menu";
 import { TakeSome } from "./take-some";
 import { RoomBody } from "./room-body";
 import { SelectionContext, describeSelection, type Selected } from "./selection-actions";
@@ -47,7 +43,7 @@ import { ClearVoteBanner, TableMenu } from "./table-menu";
 export default function TableRoom() {
   const params = useParams<{ code: string }>();
   const code = String(params.code ?? "").toUpperCase();
-  const { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, setCarry, ping, remoteDrags, remoteCarries, pings } = useTable(code);
+  const { ready, seatId, table, status, pending, fatal, join, send, setAnchor, setDrag, setCarry, ping, remoteDrags, remoteCarries, pings, handsStore } = useTable(code);
   const { feltProps, pieceProps, handCardProps, counterProps, localPositions, held, lifted, carrying, takeCount, dragCardId, hoverTarget } = useTablePointer({
     send, setAnchor, setDrag, setCarry, ping,
     landing: (mover, slot, cardId) => landingSlot(table?.pieces ?? [], mover, slot, cardId),
@@ -62,6 +58,8 @@ export default function TableRoom() {
   const [selected, setSelected] = useState<Selected>(null);
   const [infoCard, setInfoCard] = useState<string | null>(null);
   const [takeFrom, setTakeFrom] = useState<string | null>(null);
+  const [renamingCounter, setRenamingCounter] = useState<string | null>(null);
+  const [handOpen, setHandOpen] = useState(true);
   const remoteAt = useMemo(
     () => Object.fromEntries(Object.values(remoteDrags).map((drag) => [drag.pieceId, { x: drag.x, y: drag.y }])) as Record<string, { x: number; y: number }>,
     [remoteDrags],
@@ -95,17 +93,6 @@ export default function TableRoom() {
     [players, ringSize],
   );
 
-  const hands = useMemo(() => {
-    if (!table) return [];
-    const layout = {
-      seat: (id: string) => seatPoints.get(id),
-      fallback: { x: 0.5, y: 0.5 },
-    };
-    return placeHands(table.liveHands, layout, now)
-      .filter((hand) => hand.seatId !== seatId)
-      .map((hand) => ({ ...hand, seat: table.seats.find((seat) => seat.id === hand.seatId) }))
-      .filter((hand) => Boolean(hand.seat));
-  }, [now, seatId, seatPoints, table]);
 
   async function submitJoin(event: FormEvent) {
     event.preventDefault();
@@ -150,13 +137,20 @@ export default function TableRoom() {
     send,
     openInfo: setInfoCard,
     openTakeSome: setTakeFrom,
+    openRename: setRenamingCounter,
     clear: () => setSelected(null),
   });
   const takePiece = takeFrom ? table?.pieces.find((piece) => piece.id === takeFrom) : undefined;
+  const renameTarget = renamingCounter ? table?.counters.find((counter) => counter.id === renamingCounter) : undefined;
 
   return (
     <SelectionContext.Provider value={{ selected, select: setSelected }}>
-    <main className="grid h-svh grid-cols-[minmax(0,1fr)] grid-rows-[3.25rem_minmax(0,1fr)_11rem] overflow-hidden bg-[#0a1713] text-[#f2ede0] [color-scheme:dark] select-none">
+    <main
+      className={cn(
+        "grid h-svh grid-cols-[minmax(0,1fr)] overflow-hidden bg-[#0a1713] text-[#f2ede0] transition-[grid-template-rows] duration-200 [color-scheme:dark] select-none",
+        handOpen ? "grid-rows-[3.25rem_minmax(0,1fr)_11rem]" : "grid-rows-[3.25rem_minmax(0,1fr)_2.75rem]",
+      )}
+    >
       <header className="flex items-center gap-2.5 bg-felt-deep/70 px-4 text-sm">
         <b className="text-base">Bàn Bài</b>
         <Button variant="ghost" size="sm" onClick={copyInvite} className="tracking-widest tabular-nums">
@@ -189,11 +183,11 @@ export default function TableRoom() {
       <RoomBody
         view={view}
         felt={
-        <FitStage>
+        <FitStage seats={Math.max(table?.ringSize ?? 1, players.length)}>
         <Felt
           {...feltProps}
           onClick={(event) => {
-            if (!(event.target as HTMLElement).closest("[data-piece],[data-seat],[data-slot-seat],[data-slot=counter-chip],[data-overlay]")) setSelected(null);
+            if (!(event.target as HTMLElement).closest("[data-piece],[data-seat],[data-slot-seat],[data-counter],[data-overlay]")) setSelected(null);
           }}
           className="size-full rounded-[11.875rem]"
         >
@@ -242,7 +236,7 @@ export default function TableRoom() {
                         {(table?.counters ?? [])
                           .filter((counter) => counter.slotted && counter.ownerId === seat.id)
                           .map((counter) => (
-                            <SeatCounter key={counter.id} counter={counter} seats={players} mySeatId={seatId} self={seat.id === seatId} send={send} counterProps={counterProps} />
+                            <SeatCounter key={counter.id} counter={counter} self={seat.id === seatId} send={send} counterProps={counterProps} />
                           ))}
                       </div>
                     ) : undefined
@@ -250,7 +244,7 @@ export default function TableRoom() {
                   filled={(slot) => {
                     const piece = table?.pieces.find((item) => item.ownerId === seat.id && item.slot === slot);
                     if (!piece || !piece.cards.length || held === piece.id || remoteAt[piece.id]) return null;
-                    return <SlotCard piece={piece} pieceProps={pieceProps} send={send} />;
+                    return <SlotCard piece={piece} pieceProps={pieceProps} />;
                   }}
                 />
               </div>
@@ -271,7 +265,7 @@ export default function TableRoom() {
                 shrink={held === piece.id && hoverTarget?.kind === "slot"}
                 playedBy={table?.seats.find((seat) => seat.id === piece.playedBy)}
                 pieceProps={pieceProps}
-                send={send}
+
               />
             );
           })}
@@ -282,8 +276,6 @@ export default function TableRoom() {
               <CounterOnTable
                 key={counter.id}
                 counter={{ ...counter, x: at.x, y: at.y }}
-                seats={players}
-                mySeatId={seatId}
                 send={send}
                 counterProps={counterProps}
               />
@@ -303,17 +295,7 @@ export default function TableRoom() {
             return <CarriedCard key={mover} x={at.x} y={at.y} back={carry.back} colour={seat.colour} />;
           })}
 
-          {hands.map((hand) => (
-            <PlayerCursor
-              key={hand.seatId}
-              x={hand.x}
-              y={hand.y}
-              colour={hand.seat!.colour}
-              name={hand.seat!.name}
-              grabbing={hand.grabbing}
-              style={{ opacity: hand.opacity }}
-            />
-          ))}
+          <RemoteHands store={handsStore} seats={table?.seats ?? []} seatPoints={seatPoints} seatId={seatId} now={now} />
           {table?.clearVote && table.clearVote.expiresAt > now ? (
             <ClearVoteBanner vote={table.clearVote} players={players.length} seatId={seatId} seats={table.seats} send={send} />
           ) : null}
@@ -321,7 +303,7 @@ export default function TableRoom() {
         </FitStage>
         }
         log={
-            <ScrollArea className="h-full min-h-0 [&_[data-slot=scroll-area-thumb]]:bg-white/20">
+            <ScrollArea type="auto" className="h-full min-h-0 [&_[data-slot=scroll-area-thumb]]:bg-white/20">
               <ol className="pr-3 text-[0.7rem] leading-relaxed">
                 {[...(table?.log ?? [])].reverse().map((entry) => (
                   <li key={entry.id} className="border-b border-white/5 py-1 text-white/60 last:border-0">
@@ -354,30 +336,35 @@ export default function TableRoom() {
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setHandOpen(!handOpen)}
+              className="grid size-6 place-items-center rounded-md text-white/50 hover:bg-white/10 hover:text-white"
+              aria-label={handOpen ? "Thu bài trên tay" : "Mở bài trên tay"}
+            >
+              {handOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+            </button>
             <span className="text-[0.7rem] font-semibold text-gilt-dim">{watching ? "Bạn đang xem" : "Bài trên tay"}</span>
             {watching ? null : (
               <Badge variant="secondary" className="h-5 min-w-5 justify-center border-0 bg-gilt/15 px-1.5 text-[0.65rem] text-gilt tabular-nums">
                 {handCount}
               </Badge>
             )}
-            {!watching && handCount > 0 ? <span className="text-[0.68rem] text-white/40">kéo lên bàn để đánh úp, giữ Shift để ngửa</span> : null}
+            {!watching && handCount > 0 && handOpen ? <span className="text-[0.68rem] text-white/40">kéo lên bàn để đánh úp, kéo bằng chuột phải để đánh ngửa</span> : null}
           </div>
           <HandUtilities watching={Boolean(watching)} send={send} seatPoint={seatPoints.get(seatId) ?? { x: 0.5, y: 0.85 }} />
         </div>
+        {handOpen ? (
         <HandTray
           size="sm"
           cards={table?.hand ?? []}
           empty={<EmptyHand dropping={dropping} watching={Boolean(watching)} />}
           className="min-h-0 items-center pb-3"
           renderCard={(card) => (
-            <HandCard
-              cardId={card.id}
-              others={(table?.seats ?? []).filter((seat) => seat.role === "player" && seat.id !== seatId)}
-              handCardProps={handCardProps}
-              send={send}
-            />
+            <HandCard cardId={card.id} handCardProps={handCardProps} />
           )}
         />
+        ) : null}
       </section>
 
       {lifted && (() => {
@@ -438,89 +425,19 @@ export default function TableRoom() {
       </Dialog>
       {infoCard ? <CardInfoDialog cardId={infoCard} open onOpenChange={(open) => { if (!open) setInfoCard(null); }} /> : null}
       {takePiece ? <TakeSome piece={takePiece} onClose={() => setTakeFrom(null)} send={send} /> : null}
+      {renameTarget ? <RenameCounter counter={renameTarget} open onOpenChange={(open) => { if (!open) setRenamingCounter(null); }} send={send} /> : null}
     </main>
     </SelectionContext.Provider>
   );
 }
 
-function HandCard({
-  cardId,
-  others,
-  handCardProps,
-  send,
-}: {
-  cardId: string;
-  others: Array<{ id: string; name: string; colour: string }>;
-  handCardProps: ReturnType<typeof useTablePointer>["handCardProps"];
-  send: ReturnType<typeof useTable>["send"];
-}) {
-  const [info, setInfo] = useState(false);
+function HandCard({ cardId, handCardProps }: { cardId: string; handCardProps: ReturnType<typeof useTablePointer>["handCardProps"] }) {
   const { selected, select } = useContext(SelectionContext);
   const chosen = selected?.kind === "hand" && selected.cardId === cardId;
   return (
-    <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div {...handCardProps(cardId, () => select({ kind: "hand", cardId }))}>
-            <PlayingCard cardId={cardId} size="md" className={cn("transition-transform hover:-translate-y-1", chosen && "-translate-y-4 outline-2 outline-offset-2 outline-gilt")} />
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-48">
-          <ContextMenuItem onSelect={() => setInfo(true)}>
-            <BookOpenText />
-            Xem luật
-            <ContextMenuShortcut>Nháy chuột</ContextMenuShortcut>
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuLabel className="text-[0.65rem]">Đưa cho</ContextMenuLabel>
-          {others.length ? (
-            others.map((seat) => (
-              <ContextMenuItem key={seat.id} onSelect={() => void send({ type: "giveToSeat", cardId, seatId: seat.id })}>
-                <Dot tone="solid" size="md" style={{ color: seat.colour }} />
-                {seat.name}
-              </ContextMenuItem>
-            ))
-          ) : (
-            <ContextMenuItem disabled>Chưa có ai khác</ContextMenuItem>
-          )}
-        </ContextMenuContent>
-      </ContextMenu>
-      <CardInfoDialog cardId={cardId} open={info} onOpenChange={setInfo} />
-    </>
-  );
-}
-
-function CounterMenuItems({
-  counter,
-  seats,
-  mySeatId,
-  send,
-  onRename,
-}: {
-  counter: { id: string; label: string; value: number };
-  seats: Array<{ id: string; name: string; colour: string }>;
-  mySeatId: string;
-  send: ReturnType<typeof useTable>["send"];
-  onRename: () => void;
-}) {
-  return (
-    <>
-      <ContextMenuLabel className="flex items-center gap-2"><CircleDot className="size-3.5" />{counter.label}<Dot />{counter.value}</ContextMenuLabel>
-      <ContextMenuSeparator />
-      <ContextMenuItem onSelect={() => void send({ type: "adjustCounter", counterId: counter.id, delta: 1 })}><Plus />Tăng 1<ContextMenuShortcut>Nháy chuột</ContextMenuShortcut></ContextMenuItem>
-      <ContextMenuItem onSelect={() => void send({ type: "adjustCounter", counterId: counter.id, delta: -1 })}><Minus />Giảm 1<ContextMenuShortcut>Lăn chuột</ContextMenuShortcut></ContextMenuItem>
-      <ContextMenuItem onSelect={onRename}><PenLine />Đổi tên</ContextMenuItem>
-      <ContextMenuSeparator />
-      <ContextMenuLabel className="text-[0.65rem]">Gắn vào ghế</ContextMenuLabel>
-      {seats.map((seat) => (
-        <ContextMenuItem key={seat.id} onSelect={() => void send({ type: "slotCounter", counterId: counter.id, seatId: seat.id })}>
-          <Dot tone="solid" size="md" style={{ color: seat.colour }} />
-          {seat.id === mySeatId ? `${seat.name} (bạn)` : seat.name}
-        </ContextMenuItem>
-      ))}
-      <ContextMenuSeparator />
-      <ContextMenuItem variant="destructive" onSelect={() => void send({ type: "removeCounter", counterId: counter.id })}><Trash2 />Bỏ đi</ContextMenuItem>
-    </>
+    <div {...handCardProps(cardId, () => select({ kind: "hand", cardId }))}>
+      <PlayingCard cardId={cardId} size="md" className={cn("transition-transform hover:-translate-y-1", chosen && "-translate-y-4 outline-2 outline-offset-2 outline-gilt")} />
+    </div>
   );
 }
 
@@ -560,151 +477,66 @@ function RenameCounter({
 
 function SeatCounter({
   counter,
-  seats,
-  mySeatId,
   self,
   send,
   counterProps,
 }: {
   counter: { id: string; label: string; value: number; x: number; y: number };
-  seats: Array<{ id: string; name: string; colour: string }>;
-  mySeatId: string;
   self: boolean;
   send: ReturnType<typeof useTable>["send"];
   counterProps: ReturnType<typeof useTablePointer>["counterProps"];
 }) {
-  const [renaming, setRenaming] = useState(false);
   const { selected, select } = useContext(SelectionContext);
   const chosen = selected?.kind === "counter" && selected.id === counter.id;
   return (
-    <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div
-            {...counterProps(counter, () => select({ kind: "counter", id: counter.id }))}
-            onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
-          >
-            <CounterChip
-              label={counter.label}
-              value={counter.value}
-              className={cn("shadow-none", self ? "size-11" : "size-8", chosen && "outline-2 outline-offset-2 outline-gilt")}
-            />
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-48">
-          <CounterMenuItems counter={counter} seats={seats} mySeatId={mySeatId} send={send} onRename={() => setRenaming(true)} />
-        </ContextMenuContent>
-      </ContextMenu>
-      <RenameCounter counter={counter} open={renaming} onOpenChange={setRenaming} send={send} />
-    </>
+    <div
+      {...counterProps(counter, () => select({ kind: "counter", id: counter.id }))}
+      onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
+    >
+      <CounterChip
+        label={counter.label}
+        value={counter.value}
+        className={cn("shadow-none", self ? "size-11" : "size-8", chosen && "outline-2 outline-offset-2 outline-gilt")}
+      />
+    </div>
   );
 }
 
 function CounterOnTable({
   counter,
-  seats,
-  mySeatId,
   send,
   counterProps,
 }: {
   counter: { id: string; label: string; value: number; x: number; y: number };
-  seats: Array<{ id: string; name: string; colour: string }>;
-  mySeatId: string;
   send: ReturnType<typeof useTable>["send"];
   counterProps: ReturnType<typeof useTablePointer>["counterProps"];
 }) {
-  const [renaming, setRenaming] = useState(false);
   const { selected, select } = useContext(SelectionContext);
   const chosen = selected?.kind === "counter" && selected.id === counter.id;
   return (
-    <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <TablePiece
-            x={counter.x}
-            y={counter.y}
-            {...counterProps(counter, () => select({ kind: "counter", id: counter.id }))}
-            onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
-          >
-            <CounterChip label={counter.label} value={counter.value} className={cn(chosen && "outline-2 outline-offset-2 outline-gilt")} />
-          </TablePiece>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-48">
-          <CounterMenuItems counter={counter} seats={seats} mySeatId={mySeatId} send={send} onRename={() => setRenaming(true)} />
-        </ContextMenuContent>
-      </ContextMenu>
-      <RenameCounter counter={counter} open={renaming} onOpenChange={setRenaming} send={send} />
-    </>
-  );
-}
-
-function CardShell({
-  piece,
-  send,
-  children,
-}: {
-  piece: Piece;
-  send: ReturnType<typeof useTable>["send"];
-  children: (open: () => void) => React.ReactNode;
-}) {
-  const [info, setInfo] = useState(false);
-  const [takingSome, setTakingSome] = useState(false);
-  const items = PIECE_MENU.filter((item) => item.when(piece));
-  const top = piece.cards[piece.cards.length - 1];
-  const readable = top?.faceUp ? top.id : undefined;
-
-  return (
-    <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>{children(() => { if (readable) setInfo(true); })}</ContextMenuTrigger>
-        <ContextMenuContent className="w-52">
-          <ContextMenuLabel className="flex items-center gap-2">
-            <Layers className="size-3.5" />
-            {pieceLabel(piece)}
-            <Dot />
-            {piece.cards.length}
-          </ContextMenuLabel>
-          <ContextMenuSeparator />
-          {readable ? (
-            <>
-              <ContextMenuItem onSelect={() => setInfo(true)}>
-                <BookOpenText />
-                Xem luật
-                <ContextMenuShortcut>Nháy chuột</ContextMenuShortcut>
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-            </>
-          ) : null}
-          {items.map((item) => (
-            <ContextMenuItem key={item.key} onSelect={() => { if ("asks" in item) setTakingSome(true); else void send(item.command(piece)); }}>
-              <item.icon />
-              {item.label}
-              {item.gesture ? <ContextMenuShortcut>{item.gesture}</ContextMenuShortcut> : null}
-            </ContextMenuItem>
-          ))}
-        </ContextMenuContent>
-      </ContextMenu>
-      {readable ? <CardInfoDialog cardId={readable} open={info} onOpenChange={setInfo} /> : null}
-      {takingSome ? <TakeSome piece={piece} onClose={() => setTakingSome(false)} send={send} /> : null}
-    </>
+    <TablePiece
+      x={counter.x}
+      y={counter.y}
+      {...counterProps(counter, () => select({ kind: "counter", id: counter.id }))}
+      onWheel={(event) => void send({ type: "adjustCounter", counterId: counter.id, delta: event.deltaY > 0 ? -1 : 1 })}
+    >
+      <CounterChip label={counter.label} value={counter.value} className={cn(chosen && "outline-2 outline-offset-2 outline-gilt")} />
+    </TablePiece>
   );
 }
 
 function SlotCard({
   piece,
   pieceProps,
-  send,
 }: {
   piece: Piece;
   pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
-  send: ReturnType<typeof useTable>["send"];
 }) {
   const top = piece.cards[piece.cards.length - 1];
   const { selected, select } = useContext(SelectionContext);
   const chosen = selected?.kind === "piece" && selected.id === piece.id;
   return (
-    <CardShell piece={piece} send={send}>
-      {() => (
+    <>
         <div
           {...pieceProps(piece, () => select({ kind: "piece", id: piece.id }))}
           data-slotted=""
@@ -717,8 +549,7 @@ function SlotCard({
             </Badge>
           )}
         </div>
-      )}
-    </CardShell>
+    </>
   );
 }
 
@@ -732,7 +563,6 @@ function PieceOnTable({
   shrink = false,
   playedBy,
   pieceProps,
-  send,
 }: {
   piece: Piece;
   x: number;
@@ -743,14 +573,12 @@ function PieceOnTable({
   shrink?: boolean;
   playedBy?: { name: string; colour: string };
   pieceProps: ReturnType<typeof useTablePointer>["pieceProps"];
-  send: ReturnType<typeof useTable>["send"];
 }) {
   const single = piece.cards.length === 1 && !piece.tag;
   const { selected, select } = useContext(SelectionContext);
   const chosen = selected?.kind === "piece" && selected.id === piece.id;
   return (
-    <CardShell piece={piece} send={send}>
-      {() => (
+    <>
         <TablePiece
           x={x}
           y={y}
@@ -784,7 +612,6 @@ function PieceOnTable({
             </Badge>
           ) : null}
         </TablePiece>
-      )}
-    </CardShell>
+    </>
   );
 }

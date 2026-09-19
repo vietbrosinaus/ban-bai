@@ -16,7 +16,7 @@ type Drag = { pieceId: string; pointerId: number; dx: number; dy: number; startX
 
 const NO_SLOT = "Không ô nào nhận lá này. Kéo lên bàn để đánh.";
 type CounterDrag = { counterId: string; pointerId: number; dx: number; dy: number; startX: number; startY: number; moved: boolean };
-type HandDrag = { cardId: string; pointerId: number; startX: number; startY: number; moved: boolean };
+type HandDrag = { cardId: string; pointerId: number; startX: number; startY: number; moved: boolean; flip: boolean };
 
 function hitTest(clientX: number, clientY: number, ignoreId?: string): DropTarget {
   for (const element of document.elementsFromPoint(clientX, clientY)) {
@@ -94,12 +94,10 @@ export function useTablePointer({
       if (settleRef.current !== null) window.clearTimeout(settleRef.current);
       setAnchor({ kind: "home" });
     },
-    onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (event.target === event.currentTarget) event.preventDefault();
-    },
+    onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => event.preventDefault(),
     onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
-      if (target.closest("[data-piece],[data-seat],[data-slot-seat],[data-slot=counter-chip],[data-overlay]")) return;
+      if (target.closest("[data-piece],[data-seat],[data-slot-seat],[data-counter],[data-overlay]")) return;
       const { x, y } = toFraction(event.clientX, event.clientY);
       ping(x, y);
     },
@@ -175,6 +173,11 @@ export function useTablePointer({
     onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event.pointerId, event.clientX, event.clientY, true),
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => endDrag(event.pointerId, event.clientX, event.clientY, false),
     onDoubleClick: () => void send({ type: "takeToHand", pieceId: piece.id, count: 1 }),
+    onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void send({ type: "flipTop", pieceId: piece.id });
+    },
     onWheel: (event: ReactWheelEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       if (drag?.moved && drag.pieceId === piece.id && drag.peel) {
@@ -187,9 +190,10 @@ export function useTablePointer({
     onAuxClick: (event: ReactMouseEvent<HTMLDivElement>) => event.preventDefault(),
   });
 
-  const endHandDrag = (pointerId: number, clientX: number, clientY: number, drop: boolean, faceUp: boolean) => {
+  const endHandDrag = (pointerId: number, clientX: number, clientY: number, drop: boolean, shifted: boolean) => {
     const drag = handDragRef.current;
     if (!drag || drag.pointerId !== pointerId) return;
+    const faceUp = drag.flip || shifted;
     handDragRef.current = null;
     setCarrying(null);
     if (drag.moved) trackHand(clientX, clientY, false);
@@ -214,11 +218,12 @@ export function useTablePointer({
 
   const handCardProps = (cardId: string, onClick?: () => void) => ({
     onClick: () => { if (!draggedRef.current) onClick?.(); },
+    onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => event.preventDefault(),
     onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 && event.button !== 2) return;
       event.stopPropagation();
       draggedRef.current = false;
-      handDragRef.current = { cardId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
+      handDragRef.current = { cardId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false, flip: event.button === 2 };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -258,6 +263,7 @@ export function useTablePointer({
   };
 
   const counterProps = (counter: { id: string; x: number; y: number }, onClick?: () => void) => ({
+    "data-counter": counter.id,
     onClick: () => { if (!draggedRef.current) onClick?.(); },
     onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;

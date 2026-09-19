@@ -47,7 +47,7 @@ const SECTIONS: Section[] = [
     title: "Đánh bài từ tay",
     moves: [
       { icon: EyeOff, action: "Đánh úp", how: ["Kéo lá lên bàn"] },
-      { icon: Eye, action: "Đánh ngửa", how: ["Giữ Shift", "khi thả"] },
+      { icon: Eye, action: "Đánh ngửa", how: ["Kéo lá bằng chuột phải"] },
       { icon: Crown, action: "Đặt tướng, vũ khí, ngựa", how: ["Kéo vào ô trống của một người"] },
       { icon: Gift, action: "Đưa bài cho người khác", how: ["Kéo lá vào bảng tên của họ"] },
     ],
@@ -57,7 +57,7 @@ const SECTIONS: Section[] = [
     moves: [
       { icon: Move, action: "Di chuyển", how: ["Kéo"] },
       { icon: Layers, action: "Gộp hai chồng", how: ["Thả chồng này lên chồng kia"] },
-      { icon: FlipHorizontal2, action: "Lật lá trên cùng", how: ["Chuột giữa"] },
+      { icon: FlipHorizontal2, action: "Lật lá trên cùng", how: ["Chuột phải"] },
       { icon: RotateCw, action: "Xoay", how: ["Lăn chuột"] },
       { icon: MousePointer2, action: "Xào, trải, cắt đôi, úp hoặc ngửa cả chồng", how: ["Chạm vào chồng bài", "chọn ở bảng Thao tác"] },
       { icon: BookOpenText, action: "Xem luật một lá", how: ["Chạm vào lá", "Xem luật"] },

@@ -45,7 +45,10 @@ function ActionList({ view }: { view: SelectionView }) {
             )}
           >
             <action.icon className={cn("size-4 shrink-0", action.danger ? "text-red-300" : "text-gilt")} />
-            {action.label}
+            <span className="grid min-w-0">
+              <span>{action.label}</span>
+              {action.hint ? <span className="text-[0.6rem] text-white/35">{action.hint}</span> : null}
+            </span>
           </button>
         </li>
       ))}
@@ -87,7 +90,7 @@ function RoomBody({ felt, log, view }: { felt: ReactNode; log: ReactNode; view: 
     <div className="grid min-h-0 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)] gap-3 px-3 py-3">
       <SidePanel side="left" title="Thao tác" icon={MousePointerClick} open={actionsOpen} onToggle={() => setActionsOpen(!actionsOpen)}>
         {view ? (
-          <ScrollArea className="h-full [&_[data-slot=scroll-area-thumb]]:bg-white/20">
+          <ScrollArea type="auto" className="h-full [&_[data-slot=scroll-area-thumb]]:bg-white/20">
             <SelectionHeader view={view} />
             <ActionList view={view} />
           </ScrollArea>
